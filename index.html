@@ -1,0 +1,2359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bearwatch</title>
+<style>
+  :root {
+    --bg: #0d0d10;
+    --bg-raised: #16161c;
+    --bg-card: #1c1c24;
+    --bg-input: #24242e;
+    --border: #2c2c38;
+    --text: #f0f0f3;
+    --text-dim: #9a9aa8;
+    --text-faint: #62626e;
+    --accent: #e0364f;
+    --accent-hover: #f04a63;
+    --amber: #e8a33d;
+    --green: #3dc98a;
+    --radius: 10px;
+    --shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { color-scheme: dark; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  button { font: inherit; cursor: pointer; }
+  input, select, textarea { font: inherit; color: var(--text); }
+
+  /* ---------- Navbar ---------- */
+  .navbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 18px;
+    padding: 12px 22px;
+    background: rgba(13,13,16,.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; }
+  .logo .play { color: var(--accent); }
+  .search-wrap { position: relative; flex: 1 1 260px; max-width: 520px; }
+  #searchInput {
+    width: 100%; padding: 10px 14px 10px 38px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 999px; outline: none; transition: border-color .15s;
+  }
+  #searchInput:focus { border-color: var(--accent); }
+  .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; }
+  .search-dropdown {
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    max-height: 420px; overflow-y: auto; z-index: 60;
+  }
+  .search-result {
+    display: flex; gap: 12px; align-items: center;
+    padding: 8px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .search-result:last-child { border-bottom: none; }
+  .search-result:hover, .search-result.active { background: rgba(224,54,79,.13); }
+  .search-result img, .search-result .thumb-ph {
+    width: 40px; height: 60px; border-radius: 4px; object-fit: cover; flex-shrink: 0;
+    background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .search-result .sr-title { font-weight: 600; font-size: 14px; }
+  .search-result .sr-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; align-items: center; }
+  .search-result .sr-added { margin-left: auto; font-size: 12px; color: var(--green); white-space: nowrap; }
+  .search-msg { padding: 14px; font-size: 13px; color: var(--text-dim); text-align: center; }
+  .type-badge {
+    display: inline-block; padding: 1px 7px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+  }
+  .type-badge.movie { background: rgba(61,140,201,.22); color: #6fb3e0; }
+  .type-badge.tv { background: rgba(154,92,224,.22); color: #b98ae8; }
+
+  .tabs { display: flex; gap: 6px; margin-left: auto; }
+  .tab {
+    background: none; border: none; color: var(--text-dim);
+    padding: 9px 15px; border-radius: 8px; font-weight: 600; font-size: 14.5px;
+    position: relative; transition: color .15s, background .15s;
+  }
+  .tab:hover { color: var(--text); background: rgba(255,255,255,.05); }
+  .tab.active { color: var(--text); background: rgba(224,54,79,.16); }
+  .tab .badge {
+    position: absolute; top: 2px; right: 2px;
+    background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+    min-width: 17px; height: 17px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; padding: 0 4px;
+  }
+  .tab .badge:empty { display: none; }
+
+  /* ---------- Layout ---------- */
+  main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 26px 22px 60px; }
+  .hidden { display: none !important; }
+  h2.section-title {
+    font-size: 17px; font-weight: 700; margin: 30px 0 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2.section-title:first-child { margin-top: 0; }
+  h2.section-title .count { color: var(--text-faint); font-size: 13px; font-weight: 600; }
+  h2.section-title .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ---------- Library toolbar & stats ---------- */
+  .lib-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .pills {
+    display: flex; gap: 4px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px;
+  }
+  .pill {
+    background: none; border: none; color: var(--text-dim);
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    transition: color .15s, background .15s;
+  }
+  .pill:hover { color: var(--text); }
+  .pill.active { background: var(--accent); color: #fff; }
+  #libFilter {
+    flex: 1; min-width: 160px; max-width: 280px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 999px; padding: 8px 14px; outline: none; font-size: 13px;
+  }
+  #libFilter:focus { border-color: var(--accent); }
+  #libSort, #genreFilter {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 999px; padding: 8px 12px; outline: none; font-size: 13px; cursor: pointer;
+  }
+  #libSort:focus, #genreFilter:focus { border-color: var(--accent); }
+
+  /* ---------- Genre chips ---------- */
+  .genre-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  /* In library cards, keep genres to one fixed-height row so cards stay aligned. */
+  .card-body .genre-chips { flex-wrap: nowrap; overflow: hidden; height: 20px; align-items: center; }
+  .genre-chip {
+    padding: 1px 8px; background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    border-radius: 999px; font-size: 10.5px; color: var(--text-dim); white-space: nowrap;
+  }
+
+  /* ---------- Details modal ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 90;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    backdrop-filter: blur(3px);
+  }
+  .modal {
+    background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 620px; width: 100%; max-height: 85vh; overflow-y: auto;
+    position: relative; box-shadow: var(--shadow);
+  }
+  .modal-close {
+    position: absolute; top: 10px; right: 12px; background: none; border: none;
+    color: var(--text-dim); font-size: 20px; padding: 4px 8px; z-index: 2;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-hero { display: flex; gap: 18px; padding: 22px 22px 6px; }
+  .modal-hero img { width: 140px; border-radius: 8px; align-self: flex-start; flex-shrink: 0; }
+  .modal-hero .poster-ph { width: 140px; aspect-ratio: 2/3; font-size: 40px; border-radius: 8px; background: var(--bg-input); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .modal-hero h2 { font-size: 21px; line-height: 1.25; margin-bottom: 8px; padding-right: 26px; }
+  .modal-hero h2 .year { color: var(--text-dim); font-weight: 600; }
+  .modal-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
+  .modal-meta .score { color: var(--amber); font-weight: 700; }
+  .modal .genre-chips { margin-bottom: 14px; }
+  .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .modal-actions .btn { text-decoration: none; font-size: 13px; padding: 8px 14px; }
+  .modal-overview { padding: 14px 22px 18px; font-size: 14px; line-height: 1.65; color: var(--text-dim); }
+
+  /* ---------- Where to watch ---------- */
+  .modal-providers { padding: 0 22px 22px; border-top: 1px solid var(--border); margin: 0 0; padding-top: 16px; }
+  .prov-head { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+  .prov-head select {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 3px 8px; font-size: 12px; outline: none; cursor: pointer;
+  }
+  .prov-group { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .prov-label { font-size: 12px; color: var(--text-faint); width: 46px; flex-shrink: 0; }
+  .prov-logo { width: 34px; height: 34px; border-radius: 8px; }
+  .prov-link { font-size: 12.5px; color: var(--accent-hover); }
+  .prov-none { font-size: 13px; color: var(--text-faint); margin-bottom: 8px; }
+
+  /* ---------- Collapsible sections ---------- */
+  .sec-toggle { cursor: pointer; user-select: none; }
+  .sec-toggle:hover .chev { color: var(--text); }
+  .chev {
+    display: inline-block; color: var(--text-faint); font-size: 13px;
+    transition: transform .18s; width: 14px;
+  }
+  .chev.closed { transform: rotate(-90deg); }
+
+  /* ---------- Recommendations row ---------- */
+  #recsSection { margin-bottom: 6px; }
+  .rec-card .rec-poster { cursor: pointer; }
+  .recs-row { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; }
+  .rec-card {
+    flex: 0 0 132px; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; display: flex; flex-direction: column;
+  }
+  .rec-card img, .rec-card .poster-ph { width: 100%; aspect-ratio: 2/3; object-fit: cover; font-size: 30px; }
+  .rec-card .rec-title {
+    font-size: 12.5px; font-weight: 700; padding: 8px 9px 2px; line-height: 1.3;
+    /* Fixed two-line title so every card's button lines up, whatever the title length. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; min-height: calc(2.6em + 10px);
+  }
+  .rec-card .rec-meta { font-size: 11px; color: var(--text-dim); padding: 0 9px 8px; display: flex; gap: 6px; align-items: center; }
+  .rec-card .rec-add { margin: auto 8px 8px; }
+  .recs-head-btn { flex: 0 0 auto; font-size: 12px; padding: 3px 10px; }
+  .stats-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stats-bar:empty { display: none; }
+  .stat-chip {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 12px; font-size: 12.5px; color: var(--text-dim);
+  }
+  .stat-chip b { color: var(--text); }
+
+  /* ---------- Banner ---------- */
+  .banner {
+    background: linear-gradient(90deg, rgba(224,54,79,.18), rgba(224,54,79,.06));
+    border: 1px solid rgba(224,54,79,.4);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 22px;
+    font-size: 14px; line-height: 1.55;
+  }
+  .banner b { color: var(--accent-hover); }
+
+  /* ---------- Library cards ---------- */
+  .grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: transform .18s, box-shadow .18s, border-color .18s;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: #3a3a48; }
+  .poster-wrap { position: relative; aspect-ratio: 2 / 3; background: var(--bg-input); cursor: pointer; }
+  .poster-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .poster-ph {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 42px; color: var(--text-faint);
+  }
+  .poster-wrap .type-badge { position: absolute; top: 8px; left: 8px; }
+  .card-body { padding: 12px 12px 14px; display: flex; flex-direction: column; gap: 9px; flex: 1; }
+  .card-title {
+    font-size: 14.5px; font-weight: 700; line-height: 1.3;
+    /* Always reserve two lines and never exceed them, so every card's title block is
+       the same height and the controls below line up across the row. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; min-height: 2.6em;
+  }
+  /* Reserve two lines so cards with a "Next: …" episode line stay aligned with those without one. */
+  .card-sub { font-size: 12px; color: var(--text-dim); line-height: 1.25; min-height: 30px; }
+  .card-sub .next-ep { color: var(--amber); }
+  .card select {
+    width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 8px; font-size: 12.5px; outline: none;
+  }
+  .card select:focus { border-color: var(--accent); }
+  .stars { display: flex; gap: 1px; font-size: 15px; user-select: none; flex-wrap: wrap; align-items: center; }
+  .stars span { cursor: pointer; color: #3c3c4a; transition: color .1s; }
+  .stars span.filled { color: var(--amber); }
+  .stars:hover span { color: #3c3c4a; }
+  .stars span:hover, .stars span:has(~ span:hover) { color: var(--amber); }
+  .stars .rating-num { font-size: 11.5px; color: var(--text-dim); margin-left: 6px; cursor: default; }
+  .card textarea {
+    width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 9px; font-size: 12.5px; resize: vertical;
+    min-height: 34px; outline: none; color: var(--text);
+  }
+  .card textarea:focus { border-color: var(--accent); }
+  .card textarea::placeholder { color: var(--text-faint); }
+  .card-footer { display: flex; gap: 8px; margin-top: auto; }
+  .btn-del {
+    background: none; border: 1px solid var(--border); color: var(--text-faint);
+    border-radius: 7px; padding: 5px 10px; font-size: 12px;
+    transition: color .15s, border-color .15s;
+  }
+  .btn-del:hover { color: var(--accent-hover); border-color: var(--accent); }
+  .reminder-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+  .reminder-row select { flex: 1; }
+
+  /* ---------- Episode progress (TV) ---------- */
+  .prog-block {
+    display: flex; flex-direction: column; gap: 7px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--border);
+    border-radius: 7px; padding: 9px 10px;
+  }
+  .prog-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--text-dim); gap: 6px; }
+  .prog-top b { color: var(--text); font-size: 12.5px; }
+  .prog-top .finished { color: var(--green); font-weight: 700; }
+  .prog-bar { height: 5px; border-radius: 999px; background: var(--bg-input); overflow: hidden; }
+  .prog-bar div { height: 100%; background: var(--accent); border-radius: 999px; transition: width .25s; }
+  .prog-actions { display: flex; gap: 6px; }
+  .btn-mini {
+    flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 600;
+    transition: border-color .15s, color .15s;
+  }
+  .btn-mini:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-hover); }
+  .btn-mini:disabled { opacity: .4; cursor: default; }
+  .ep-picker { display: flex; flex-direction: column; gap: 6px; }
+  .ep-picker .row { display: flex; gap: 6px; }
+  .ep-picker .pick-hint, .pick-hint { font-size: 11.5px; color: var(--text-faint); }
+
+  /* ---------- Netflix import preview ---------- */
+  .nf-list {
+    display: flex; flex-direction: column; gap: 4px;
+    max-height: 340px; overflow-y: auto; margin-top: 12px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+    background: rgba(255,255,255,.02);
+  }
+  .nf-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+  .nf-row:hover { background: rgba(255,255,255,.04); }
+  .nf-row input { accent-color: var(--accent); width: 16px; height: 16px; flex-shrink: 0; }
+  .nf-row img, .nf-row .thumb-ph {
+    width: 32px; height: 48px; border-radius: 4px; object-fit: cover; flex-shrink: 0;
+    background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .nf-src { font-size: 13px; font-weight: 600; }
+  .nf-match { font-size: 12px; color: var(--text-dim); }
+
+  .empty {
+    color: var(--text-faint); font-size: 13.5px; padding: 18px;
+    border: 1px dashed var(--border); border-radius: var(--radius); text-align: center;
+  }
+
+  /* ---------- Setup card ---------- */
+  .setup-card {
+    max-width: 560px; margin: 60px auto; text-align: center;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 40px 34px;
+  }
+  .setup-card .big { font-size: 44px; margin-bottom: 14px; }
+  .setup-card h2 { margin-bottom: 10px; }
+  .setup-card p { color: var(--text-dim); font-size: 14.5px; line-height: 1.6; margin-bottom: 18px; }
+  .setup-card a { color: var(--accent-hover); }
+  .setup-card .lead { font-size: 15px; color: var(--text); margin-bottom: 22px; }
+  /* Numbered first-run steps */
+  .setup-steps { text-align: left; counter-reset: step; margin: 0 auto 22px; max-width: 440px; display: grid; gap: 14px; }
+  .setup-steps li { list-style: none; position: relative; padding-left: 40px; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+  .setup-steps li b { color: var(--text); }
+  .setup-steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: -2px; width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #fff; font-size: 13px; font-weight: 700;
+    border-radius: 50%;
+  }
+  .setup-note { font-size: 12.5px; color: var(--text-faint); line-height: 1.55; }
+  /* Compact numbered steps reused inside Settings */
+  .key-steps { counter-reset: step; margin: 6px 0 4px; padding: 0; display: grid; gap: 7px; }
+  .key-steps li { list-style: none; position: relative; padding-left: 26px; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+  .key-steps li b { color: var(--text); }
+  .key-steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 0; width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    font-size: 11px; font-weight: 700; border-radius: 50%;
+  }
+
+  /* ---------- Calendar ---------- */
+  .cal-group { margin-bottom: 30px; }
+  .cal-row {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 16px 10px 10px; margin-bottom: 10px;
+  }
+  .cal-row img, .cal-row .thumb-ph {
+    width: 46px; height: 69px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+    background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .cal-row .cal-title { font-weight: 700; font-size: 15px; }
+  .cal-row .cal-meta { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .cal-row .chip {
+    margin-left: auto; flex-shrink: 0; padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+  }
+  .chip.today { background: rgba(224,54,79,.2); color: var(--accent-hover); border: 1px solid rgba(224,54,79,.5); }
+  .chip.week { background: rgba(232,163,61,.16); color: var(--amber); border: 1px solid rgba(232,163,61,.45); }
+  .chip.later { background: rgba(255,255,255,.06); color: var(--text-dim); border: 1px solid var(--border); }
+
+  /* ---------- Settings ---------- */
+  .settings-panel { max-width: 640px; }
+  .settings-block {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px; margin-bottom: 20px;
+  }
+  .settings-block h3 { font-size: 15.5px; margin-bottom: 6px; }
+  .settings-block .hint { font-size: 13px; color: var(--text-dim); line-height: 1.55; margin-bottom: 14px; }
+  .settings-block .hint a { color: var(--accent-hover); }
+  .key-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .key-row input {
+    flex: 1 1 240px; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; outline: none;
+  }
+  .key-row input:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: 8px; padding: 9px 18px; font-weight: 700; font-size: 14px;
+    transition: background .15s;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn.secondary { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); }
+  .btn.secondary:hover { background: #2e2e3a; }
+  .key-status { margin-top: 10px; font-size: 13px; min-height: 18px; }
+  .key-status.ok { color: var(--green); }
+  .key-status.err { color: var(--accent-hover); }
+  .toggle-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .toggle-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  /* ---------- Stats view ---------- */
+  .stats-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stats-head h2 { font-size: 19px; }
+  .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-tile {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center;
+  }
+  .stat-tile .v { font-size: 26px; font-weight: 800; color: var(--accent-hover); }
+  .stat-tile .l { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .stat-panel {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px;
+  }
+  .stat-panel h3 { font-size: 14px; margin-bottom: 14px; color: var(--text); }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 12px; }
+  .bar-row .bl { width: 92px; color: var(--text-dim); flex-shrink: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .bt { flex: 1; background: var(--bg-input); border-radius: 4px; height: 16px; overflow: hidden; }
+  .bar-row .bf { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 4px; min-width: 2px; }
+  .bar-row .bv { width: 52px; color: var(--text-faint); flex-shrink: 0; font-size: 11px; }
+  .toplist { display: flex; flex-direction: column; gap: 8px; }
+  .toplist .tl-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .toplist .tl-rank { color: var(--text-faint); width: 16px; }
+  .toplist .tl-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toplist .tl-val { color: var(--amber); font-weight: 700; }
+  .stat-hint { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+
+  /* ---------- Wrapped ---------- */
+  .wrapped-card {
+    background:
+      radial-gradient(circle at 20% 10%, rgba(224,54,79,.35), transparent 45%),
+      radial-gradient(circle at 85% 85%, rgba(154,92,224,.3), transparent 50%),
+      linear-gradient(150deg, #191022, #0d0d10 70%);
+    padding: 38px 34px; text-align: center;
+  }
+  .wrapped-card .w-kicker { font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+  .wrapped-card .w-big { font-size: 52px; font-weight: 800; line-height: 1.05; color: var(--accent-hover); }
+  .wrapped-card .w-sub { font-size: 14px; color: var(--text-dim); margin: 8px 0 26px; }
+  .wrapped-card .w-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 22px; }
+  .wrapped-card .w-stat { background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; min-width: 110px; }
+  .wrapped-card .w-stat .v { font-size: 22px; font-weight: 800; }
+  .wrapped-card .w-stat .l { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+  .wrapped-card .w-line { font-size: 15px; margin: 7px 0; }
+  .wrapped-card .w-line b { color: var(--amber); }
+  .wrapped-card .w-fun { font-size: 13px; color: var(--text-dim); margin-top: 20px; font-style: italic; }
+
+  /* ---------- Toasts ---------- */
+  #toasts { position: fixed; bottom: 22px; right: 22px; z-index: 100; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
+  .toast {
+    background: var(--bg-raised); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 12px 16px; font-size: 13.5px; box-shadow: var(--shadow);
+    animation: slideIn .25s ease; line-height: 1.45;
+  }
+  @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  footer { text-align: center; padding: 18px; font-size: 11.5px; color: var(--text-faint); border-top: 1px solid var(--border); }
+  footer a { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header class="navbar">
+  <div class="logo"><span class="play">🐻‍❄️</span> Bearwatch</div>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input id="searchInput" type="text" placeholder="Search movies &amp; TV shows…" autocomplete="off" spellcheck="false">
+    <div id="searchDropdown" class="search-dropdown hidden"></div>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-view="library">Library</button>
+    <button class="tab" data-view="calendar">Calendar<span class="badge" id="calBadge"></span></button>
+    <button class="tab" data-view="stats">📊 Stats</button>
+    <button class="tab" data-view="settings" title="Settings">⚙️</button>
+  </nav>
+</header>
+
+<main>
+  <section id="view-library">
+    <div id="reminderBanner"></div>
+    <div class="lib-toolbar" id="libToolbar" hidden>
+      <div class="pills">
+        <button class="pill active" data-type="all" type="button">All</button>
+        <button class="pill" data-type="movie" type="button">🎬 Movies</button>
+        <button class="pill" data-type="tv" type="button">📺 TV Shows</button>
+      </div>
+      <input id="libFilter" type="text" placeholder="Filter by title…" autocomplete="off" spellcheck="false">
+      <select id="genreFilter" title="Filter by genre"><option value="">All genres</option></select>
+      <select id="libSort" title="Sort library">
+        <option value="added">↓ Recently added</option>
+        <option value="title">↓ Title A–Z</option>
+        <option value="rating">↓ My rating</option>
+        <option value="release">↓ Release date</option>
+      </select>
+    </div>
+    <div id="backupNudge"></div>
+    <div class="stats-bar" id="statsBar"></div>
+    <div id="recsSection"></div>
+    <div id="libraryContent"></div>
+  </section>
+
+  <section id="view-calendar" class="hidden">
+    <div id="calendarContent"></div>
+  </section>
+
+  <section id="view-stats" class="hidden">
+    <div id="statsContent"></div>
+  </section>
+
+  <section id="view-settings" class="hidden">
+    <div class="settings-panel">
+      <div class="settings-block">
+        <h3>TMDb API Key</h3>
+        <p class="hint">
+          Search is powered by <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">The Movie Database</a> (free).
+          It is stored only in this browser's local storage. Don't have a key yet?
+        </p>
+        <ol class="key-steps">
+          <li>Make a free account at
+            <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a> and confirm your email.</li>
+          <li>Go to <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Settings → API</a> →
+            <b>Create</b> → <b>Developer</b> and fill in the short form.</li>
+          <li>Copy your <b>API Key (v3 auth)</b> and paste it below. A <b>v4 Read Access Token</b> works too if you'd rather use that.</li>
+        </ol>
+        <div class="key-row">
+          <input id="apiKeyInput" type="password" placeholder="Paste your TMDb API key or token…" autocomplete="off">
+          <button class="btn secondary" id="toggleKeyBtn" type="button">👁 Show</button>
+          <button class="btn" id="saveKeyBtn" type="button">Save &amp; Test</button>
+        </div>
+        <div class="key-status" id="keyStatus"></div>
+      </div>
+
+      <div class="settings-block">
+        <h3>Notifications</h3>
+        <p class="hint">Desktop notifications fire for your release reminders, but only while this page is open in the browser (there's no background server running).</p>
+        <label class="toggle-row">
+          <input type="checkbox" id="notifToggle">
+          Enable desktop notifications
+        </label>
+        <div class="key-status" id="notifStatus"></div>
+      </div>
+
+      <div class="settings-block">
+        <h3>Reminders</h3>
+        <p class="hint">New titles you add default to a <b>release-day</b> reminder. This applies that same
+          default to everything already in your library. Anything you've set to a specific time is left alone.</p>
+        <div class="key-row">
+          <button class="btn secondary" id="applyRemAllBtn" type="button">🔔 Remind on release day for all titles</button>
+          <button class="btn secondary" id="clearRemAllBtn" type="button">🔕 Turn off all reminders</button>
+        </div>
+        <div class="key-status" id="remBulkStatus"></div>
+      </div>
+
+      <div class="settings-block">
+        <h3>Import Watch History (CSV)</h3>
+        <p class="hint">
+          Import a watch-history CSV from <b>Netflix</b> (Account → Profiles → Viewing activity → Download all),
+          <b>Letterboxd</b>, <b>IMDb</b>, <b>Trakt</b>, or any CSV with a title column. Headers are detected
+          automatically (title, date, year, rating, type). Episodes are grouped per show and matched on TMDb;
+          movies land in <b>Watched</b>, episode progress is set to the furthest episode found, and ratings
+          are imported where present (5-star scales are converted to 10).
+          You'll get a review list to approve before anything is added.
+        </p>
+        <div class="key-row">
+          <button class="btn secondary" id="netflixImportBtn" type="button">📥 Import history CSV</button>
+          <input type="file" id="netflixFile" accept=".csv,text/csv" class="hidden">
+        </div>
+        <div class="key-status" id="netflixStatus"></div>
+        <div id="netflixPreview"></div>
+      </div>
+
+      <div class="settings-block">
+        <h3>Backup</h3>
+        <p class="hint">Your library lives only in this browser's local storage. Export a JSON backup occasionally, or move your data to another browser.</p>
+        <div class="key-row">
+          <button class="btn secondary" id="exportBtn" type="button">⬇ Export JSON</button>
+          <button class="btn secondary" id="importBtn" type="button">⬆ Import JSON</button>
+          <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+        </div>
+        <div class="key-status" id="backupStatus"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<div id="toasts"></div>
+
+<footer>
+  This product uses the TMDB API but is not endorsed or certified by <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a>.
+  All data is stored locally in your browser.
+</footer>
+
+<script>
+"use strict";
+
+/* ================= Storage ================= */
+const LS_ITEMS = "mt_items";
+const LS_SETTINGS = "mt_settings";
+const LS_TV_REFRESH = "mt_lastTvRefresh";
+
+const state = {
+  items: loadJSON(LS_ITEMS, []),
+  settings: Object.assign({ apiKey: "", notificationsEnabled: false }, loadJSON(LS_SETTINGS, {})),
+  view: "library",
+};
+
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+}
+function saveItems() { localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); }
+function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(state.settings)); }
+
+/* ================= Utilities ================= */
+const $ = (sel) => document.querySelector(sel);
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Parse "YYYY-MM-DD" as a LOCAL date (avoids UTC off-by-one).
+function parseLocalDate(str) {
+  if (!str) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+function startOfToday() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+function daysUntil(dateStr) {
+  const d = parseLocalDate(dateStr);
+  if (!d) return null;
+  return Math.round((d - startOfToday()) / 86400000);
+}
+function formatDate(dateStr) {
+  const d = parseLocalDate(dateStr);
+  if (!d) return "TBA";
+  return d.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+}
+function yearOf(dateStr) { return dateStr ? dateStr.slice(0, 4) : "—"; }
+
+// The date the calendar/reminders care about: next episode for TV, release date for movies.
+function effectiveDate(item) {
+  if (item.mediaType === "tv" && item.nextAirDate) return item.nextAirDate;
+  return item.releaseDate || null;
+}
+
+const IMG = (path, size) => path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
+
+function toast(msg, ms = 6000) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+/* ================= TMDb service ================= */
+async function tmdbFetch(path, params = {}, signal) {
+  const key = (state.settings.apiKey || "").trim();
+  if (!key) throw new Error("NO_KEY");
+  const url = new URL("https://api.themoviedb.org/3" + path);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const opts = { signal };
+  if (key.startsWith("eyJ")) {           // v4 read access token (JWT)
+    opts.headers = { Authorization: "Bearer " + key, "Content-Type": "application/json" };
+  } else {                                // v3 api key
+    url.searchParams.set("api_key", key);
+  }
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.status_message || "TMDb request failed (HTTP " + res.status + ")");
+  }
+  return res.json();
+}
+
+/* ================= Search ================= */
+const searchInput = $("#searchInput");
+const dropdown = $("#searchDropdown");
+let searchTimer = null;
+let searchAbort = null;
+let searchResults = [];
+let activeIndex = -1;
+
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchInput.value.trim();
+  if (!q) { closeDropdown(); return; }
+  searchTimer = setTimeout(() => runSearch(q), 350);
+});
+
+searchInput.addEventListener("keydown", (e) => {
+  if (dropdown.classList.contains("hidden")) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); moveActive(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (activeIndex >= 0 && searchResults[activeIndex]) selectResult(searchResults[activeIndex]);
+  }
+  else if (e.key === "Escape") closeDropdown();
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".search-wrap")) closeDropdown();
+});
+
+async function runSearch(query) {
+  if (!(state.settings.apiKey || "").trim()) {
+    showSearchMessage('Add your TMDb API key in <b>⚙️ Settings</b> to enable search.');
+    return;
+  }
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  showSearchMessage("Searching…");
+  try {
+    const data = await tmdbFetch("/search/multi", { query, include_adult: "false" }, searchAbort.signal);
+    searchResults = (data.results || [])
+      .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+      .slice(0, 8);
+    renderDropdown();
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    showSearchMessage(err.message === "NO_KEY"
+      ? 'Add your TMDb API key in <b>⚙️ Settings</b> to enable search.'
+      : "Search failed: " + escapeHtml(err.message));
+  }
+}
+
+function showSearchMessage(html) {
+  searchResults = []; activeIndex = -1;
+  dropdown.innerHTML = `<div class="search-msg">${html}</div>`;
+  dropdown.classList.remove("hidden");
+}
+
+function renderDropdown() {
+  activeIndex = -1;
+  if (!searchResults.length) { showSearchMessage("No movies or TV shows found."); return; }
+  dropdown.innerHTML = searchResults.map((r, i) => {
+    const title = r.media_type === "movie" ? r.title : r.name;
+    const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
+    const thumb = IMG(r.poster_path, "w92");
+    const tracked = state.items.some((it) => it.id === r.media_type + "-" + r.id);
+    return `
+      <div class="search-result" data-i="${i}">
+        ${thumb ? `<img src="${thumb}" alt="">` : `<div class="thumb-ph">🎬</div>`}
+        <div>
+          <div class="sr-title">${escapeHtml(title)}</div>
+          <div class="sr-meta">
+            <span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span>
+            <span>${yearOf(date)}</span>
+          </div>
+        </div>
+        ${tracked ? '<span class="sr-added">✓ In library</span>' : ""}
+      </div>`;
+  }).join("");
+  dropdown.classList.remove("hidden");
+  dropdown.querySelectorAll(".search-result").forEach((el) => {
+    el.addEventListener("click", () => selectResult(searchResults[+el.dataset.i]));
+  });
+}
+
+function moveActive(delta) {
+  if (!searchResults.length) return;
+  activeIndex = (activeIndex + delta + searchResults.length) % searchResults.length;
+  dropdown.querySelectorAll(".search-result").forEach((el, i) => {
+    el.classList.toggle("active", i === activeIndex);
+    if (i === activeIndex) el.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function closeDropdown() {
+  dropdown.classList.add("hidden");
+  dropdown.innerHTML = "";
+  searchResults = []; activeIndex = -1;
+}
+
+/* ================= Add / manage items ================= */
+async function selectResult(r) {
+  const id = r.media_type + "-" + r.id;
+  closeDropdown();
+  searchInput.value = "";
+  if (state.items.some((it) => it.id === id)) {
+    toast("Already in your library: " + (r.title || r.name));
+    return;
+  }
+  const item = {
+    id,
+    tmdbId: r.id,
+    mediaType: r.media_type,
+    title: r.media_type === "movie" ? r.title : r.name,
+    releaseDate: (r.media_type === "movie" ? r.release_date : r.first_air_date) || null,
+    posterPath: r.poster_path || null,
+    overview: r.overview || "",
+    status: "watchlist",
+    rating: null,
+    notes: "",
+    nextAirDate: null,
+    nextEpisodeLabel: null,
+    reminderOffsetDays: 0,   // default: remind on release day (user can switch to off)
+    notifiedKeys: [],
+    addedAt: Date.now(),
+  };
+  state.items.push(item);
+  saveItems();
+  renderAll();
+  toast(`Added to Watchlist: ${item.title}`);
+
+  try {
+    if (item.mediaType === "tv") {
+      await refreshTvItem(item);
+    } else {
+      const d = await tmdbFetch("/movie/" + item.tmdbId);
+      item.runtime = d.runtime || 0;
+      item.genres = (d.genres || []).map((g) => g.name);
+      if (d.release_date) item.releaseDate = d.release_date;
+    }
+    saveItems();
+    renderAll();
+  } catch { /* non-fatal */ }
+}
+
+// One-time backfill for movies added before runtimes/genres were tracked.
+async function backfillMovieDetails() {
+  if (!(state.settings.apiKey || "").trim()) return;
+  const movies = state.items.filter((it) => it.mediaType === "movie" && (it.runtime == null || !it.genres));
+  if (!movies.length) return;
+  let changed = false;
+  for (const it of movies) {
+    try {
+      const d = await tmdbFetch("/movie/" + it.tmdbId);
+      it.runtime = d.runtime || 0;
+      it.genres = (d.genres || []).map((g) => g.name);
+      changed = true;
+    } catch { /* retry next load */ }
+  }
+  if (changed) { saveItems(); renderAll(); }
+}
+
+async function refreshTvItem(item) {
+  const d = await tmdbFetch("/tv/" + item.tmdbId);
+  const ne = d.next_episode_to_air;
+  item.nextAirDate = ne?.air_date || null;
+  item.nextEpisodeLabel = ne ? `S${ne.season_number}E${ne.episode_number}` : null;
+  if (d.first_air_date) item.releaseDate = d.first_air_date;
+  if (Array.isArray(d.seasons)) {
+    item.seasons = d.seasons
+      .filter((s) => s.season_number > 0)   // skip "Specials" (season 0)
+      .map((s) => ({ n: s.season_number, count: s.episode_count || 0, name: s.name || "" }));
+  }
+  item.totalEpisodes = d.number_of_episodes || null;
+  // Per-episode runtime in minutes; 0 = TMDb has no data (so we don't refetch forever).
+  item.runtime = (d.episode_run_time && d.episode_run_time[0]) || d.last_episode_to_air?.runtime || 0;
+  item.genres = (d.genres || []).map((g) => g.name);
+}
+
+async function refreshAllTvDates(force = false) {
+  if (!(state.settings.apiKey || "").trim()) return;
+  const last = +localStorage.getItem(LS_TV_REFRESH) || 0;
+  const stale = force || Date.now() - last >= 12 * 3600 * 1000;
+  // Refresh on the 12 h schedule, plus any item still missing season/runtime/genre data (added before those features).
+  const tvItems = state.items.filter((it) => it.mediaType === "tv" && (stale || !it.seasons || it.runtime == null || !it.genres));
+  if (!tvItems.length) return;
+  let ok = false;
+  for (const item of tvItems) {
+    try { await refreshTvItem(item); ok = true; } catch { /* skip */ }
+  }
+  if (ok) {
+    if (stale) localStorage.setItem(LS_TV_REFRESH, String(Date.now()));
+    saveItems();
+    renderAll();
+    checkReminders();
+  }
+}
+
+/* ---- Episode progress helpers ---- */
+function watchedCount(item) {
+  if (!item.progress || !item.seasons) return 0;
+  let c = 0;
+  for (const s of item.seasons) if (s.n < item.progress.s) c += s.count;
+  return c + item.progress.e;
+}
+// The episode after the current progress pointer; null = finished or no season data.
+function nextEpisodeOf(item) {
+  if (!item.seasons || !item.seasons.length) return null;
+  if (!item.progress) return { s: item.seasons[0].n, e: 1 };
+  const { s, e } = item.progress;
+  const season = item.seasons.find((x) => x.n === s);
+  if (season && e < season.count) return { s, e: e + 1 };
+  const idx = item.seasons.findIndex((x) => x.n === s);
+  const nxt = item.seasons[idx + 1];
+  return nxt ? { s: nxt.n, e: 1 } : null;
+}
+
+function getItem(id) { return state.items.find((it) => it.id === id); }
+
+/* ---- Watch-event log (powers viewing-over-time charts & Wrapped) ---- */
+const LS_EVENTS = "mt_events";
+function logWatchEvent(item, epCount, minutes) {
+  if (!minutes || minutes <= 0) return;
+  const ev = loadJSON(LS_EVENTS, []);
+  ev.push({ t: Date.now(), id: item.id, mt: item.mediaType, n: epCount, min: Math.round(minutes) });
+  localStorage.setItem(LS_EVENTS, JSON.stringify(ev));
+}
+
+/* ================= Library rendering ================= */
+const STATUSES = [
+  { key: "watching",  label: "Watching",  color: "#3dc98a" },
+  { key: "watchlist", label: "Watchlist", color: "#e8a33d" },
+  { key: "watched",   label: "Watched",   color: "#6fb3e0" },
+];
+const REMINDER_OPTIONS = [
+  { v: "",  label: "🔔 Reminder: off" },
+  { v: "0", label: "🔔 On release day" },
+  { v: "1", label: "🔔 1 day before" },
+  { v: "3", label: "🔔 3 days before" },
+  { v: "7", label: "🔔 1 week before" },
+];
+
+// Estimated minutes watched: movie runtimes for watched movies, episode runtime × episodes
+// seen for shows. Falls back to 110 min/movie and 35 min/episode when TMDb has no runtime.
+function libraryStats(items) {
+  let min = 0, eps = 0, moviesWatched = 0;
+  for (const it of items) {
+    if (it.mediaType === "movie") {
+      if (it.status === "watched") { moviesWatched++; min += it.runtime || 110; }
+    } else {
+      const n = it.progress ? watchedCount(it) : (it.status === "watched" ? (it.totalEpisodes || 0) : 0);
+      eps += n;
+      min += n * (it.runtime || 35);
+    }
+  }
+  return { min, eps, moviesWatched };
+}
+
+function renderStats(items) {
+  const movies = items.filter((i) => i.mediaType === "movie").length;
+  const shows = items.filter((i) => i.mediaType === "tv").length;
+  const { min, eps, moviesWatched } = libraryStats(items);
+  const h = Math.round(min / 60);
+  const days = min >= 1440 ? ` (${(min / 1440).toFixed(1)} days)` : "";
+  $("#statsBar").innerHTML = `
+    <span class="stat-chip">🎬 <b>${movies}</b> movie${movies === 1 ? "" : "s"}</span>
+    <span class="stat-chip">📺 <b>${shows}</b> show${shows === 1 ? "" : "s"}</span>
+    <span class="stat-chip">🍿 <b>${moviesWatched}</b> movie${moviesWatched === 1 ? "" : "s"} + <b>${eps}</b> episode${eps === 1 ? "" : "s"} watched</span>
+    <span class="stat-chip">⏱ ≈ <b>${h} h</b> watched${days}</span>`;
+}
+
+// Unrated / undated items sort to the bottom of their section.
+const LIB_SORTERS = {
+  added:   (a, b) => (b.addedAt || 0) - (a.addedAt || 0),
+  title:   (a, b) => a.title.localeCompare(b.title),
+  rating:  (a, b) => (b.rating || 0) - (a.rating || 0) || a.title.localeCompare(b.title),
+  release: (a, b) => (b.releaseDate || "0000").localeCompare(a.releaseDate || "0000"),
+};
+
+function renderLibrary() {
+  const root = $("#libraryContent");
+  $("#libToolbar").hidden = !state.items.length;
+  if (!state.items.length) {
+    $("#statsBar").innerHTML = "";
+    const hasKey = !!(state.settings.apiKey || "").trim();
+    root.innerHTML = hasKey
+      ? `<div class="setup-card">
+          <div class="big">🍿</div>
+          <h2>Your library is empty</h2>
+          <p>Use the search bar above to find a movie or TV show and start tracking.</p>
+        </div>`
+      : `<div class="setup-card">
+          <div class="big">🍿</div>
+          <h2>Welcome to Bearwatch</h2>
+          <p class="lead">Keep track of what you're watching, get nudged about new releases, and see your
+            stats, all in this one file that stays private in your own browser. You just need a free key
+            to look up movies and shows. It only takes a minute or two:</p>
+          <ol class="setup-steps">
+            <li>Create a <b>free account</b> at
+              <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a>
+              (confirm the email they send you).</li>
+            <li>Open
+              <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Settings → API</a>,
+              click <b>Create</b> → <b>Developer</b>, and fill in the short form (any personal use description is fine).</li>
+            <li>Copy your <b>API Key (v3 auth)</b>. It's a long string of letters and numbers.</li>
+            <li>Come back here, open <b>⚙️ Settings</b> below, paste it in, and hit <b>Save &amp; Test</b>.</li>
+          </ol>
+          <button class="btn" onclick="switchView('settings')">Open Settings →</button>
+          <p class="setup-note" style="margin-top:22px">🔒 Your key and everything you track stay in this
+            browser. None of it gets uploaded anywhere. Reminders only show while this page is open.</p>
+        </div>`;
+    return;
+  }
+
+  // Rebuild the genre dropdown when the set of genres in the library changes.
+  const gSel = $("#genreFilter");
+  const allGenres = [...new Set(state.items.flatMap((it) => it.genres || []))].sort();
+  const gSig = allGenres.join("|");
+  if (gSel.dataset.sig !== gSig) {
+    gSel.dataset.sig = gSig;
+    if (!allGenres.includes(state.libGenre)) state.libGenre = "";
+    gSel.innerHTML = `<option value="">All genres</option>` +
+      allGenres.map((g) => `<option${g === state.libGenre ? " selected" : ""}>${escapeHtml(g)}</option>`).join("");
+  }
+
+  const typeF = state.libType || "all";
+  const q = (state.libQuery || "").trim().toLowerCase();
+  const genreF = state.libGenre || "";
+  const filterActive = typeF !== "all" || !!q || !!genreF;
+  const filtered = state.items.filter((it) =>
+    (typeF === "all" || it.mediaType === typeF) &&
+    (!genreF || (it.genres || []).includes(genreF)) &&
+    (!q || it.title.toLowerCase().includes(q)));
+  renderStats(filtered);
+
+  if (!filtered.length) {
+    root.innerHTML = `<div class="empty">No titles match the current filter.</div>`;
+    return;
+  }
+
+  const sorter = LIB_SORTERS[state.libSort] || LIB_SORTERS.added;
+  const collapsed = state.settings.collapsedSections || {};
+  root.innerHTML = STATUSES.map((s) => {
+    const items = filtered
+      .filter((it) => it.status === s.key)
+      .sort(sorter);
+    if (!items.length && filterActive) return "";   // hide empty sections while filtering
+    const closed = !!collapsed[s.key];
+    return `
+      <h2 class="section-title sec-toggle" data-sec="${s.key}" title="Click to ${closed ? "expand" : "collapse"}">
+        <span class="chev ${closed ? "closed" : ""}">▾</span>
+        <span class="dot" style="background:${s.color}"></span>${s.label}
+        <span class="count">${items.length}</span></h2>
+      ${closed ? "" : (items.length
+        ? `<div class="grid">${items.map(cardHtml).join("")}</div>`
+        : `<div class="empty">Nothing in ${s.label} yet.</div>`)}`;
+  }).join("");
+
+  root.querySelectorAll(".sec-toggle").forEach((h) =>
+    h.addEventListener("click", () => toggleSection(h.dataset.sec)));
+
+  bindCardEvents(root);
+}
+
+function toggleSection(key) {
+  const c = state.settings.collapsedSections || (state.settings.collapsedSections = {});
+  c[key] = !c[key];
+  saveSettings();
+  renderLibrary();
+  renderRecs();
+}
+
+function cardHtml(item) {
+  const poster = IMG(item.posterPath, "w342");
+  const eff = effectiveDate(item);
+  const days = eff ? daysUntil(eff) : null;
+  let sub = `${yearOf(item.releaseDate)} · ${formatDate(item.releaseDate)}`;
+  if (item.mediaType === "tv" && item.nextAirDate && days >= 0) {
+    sub += `<br><span class="next-ep">Next: ${escapeHtml(item.nextEpisodeLabel || "episode")} · ${formatDate(item.nextAirDate)}</span>`;
+  }
+  const stars = Array.from({ length: 10 }, (_, i) => {
+    const v = i + 1;
+    return `<span data-v="${v}" class="${item.rating >= v ? "filled" : ""}" title="${v}/10">★</span>`;
+  }).join("");
+
+  let progHtml = "";
+  if (item.mediaType === "tv") {
+    const total = item.totalEpisodes ||
+      (item.seasons ? item.seasons.reduce((a, s) => a + s.count, 0) : 0);
+    const wc = watchedCount(item);
+    const pct = total ? Math.min(100, Math.round((wc / total) * 100)) : 0;
+    const next = nextEpisodeOf(item);
+    const posLabel = item.progress ? `<b>S${item.progress.s} · E${item.progress.e}</b>` : "Not started";
+    const nextLabel = item.progress && !next
+      ? `<span class="finished">✓ All caught up</span>`
+      : (next && item.progress ? `Up next: S${next.s}E${next.e}` : "");
+    progHtml = `
+      <div class="prog-block">
+        <div class="prog-top"><span>📺 ${posLabel}</span><span>${total ? wc + " / " + total + " ep" : ""}</span></div>
+        <div class="prog-bar"><div style="width:${pct}%"></div></div>
+        ${nextLabel ? `<div class="prog-top"><span>${nextLabel}</span></div>` : ""}
+        <div class="prog-actions">
+          <button class="btn-mini ep-plus" ${next ? "" : "disabled"} title="Mark next episode watched">+1 Ep</button>
+          <button class="btn-mini ep-set" title="Jump to a specific episode">Set…</button>
+        </div>
+        <div class="ep-picker hidden"></div>
+      </div>`;
+  }
+  return `
+    <div class="card" data-id="${item.id}">
+      <div class="poster-wrap" title="Show details">
+        ${poster ? `<img src="${poster}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
+        <span class="type-badge ${item.mediaType}">${item.mediaType === "tv" ? "TV" : "Movie"}</span>
+      </div>
+      <div class="card-body">
+        <div class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+        <div class="card-sub">${sub}</div>
+        <div class="genre-chips">${(item.genres || []).slice(0, 2).map((g) =>
+          `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>
+        ${progHtml}
+        <select class="status-select" title="Status">
+          ${STATUSES.map((s) => `<option value="${s.key}" ${item.status === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
+        </select>
+        <div class="stars" title="My rating (click a star; click again to clear)">
+          ${stars}<span class="rating-num">${item.rating ? item.rating + "/10" : "unrated"}</span>
+        </div>
+        <textarea class="notes" rows="1" placeholder="Personal notes…">${escapeHtml(item.notes)}</textarea>
+        <div class="reminder-row">
+          <select class="reminder-select" title="Release reminder">
+            ${REMINDER_OPTIONS.map((o) =>
+              `<option value="${o.v}" ${String(item.reminderOffsetDays ?? "") === o.v ? "selected" : ""}>${o.label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="card-footer">
+          <button class="btn-del" title="Remove from library">🗑 Remove</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindCardEvents(root) {
+  root.querySelectorAll(".card").forEach((card) => {
+    const item = getItem(card.dataset.id);
+    if (!item) return;
+
+    card.querySelector(".poster-wrap").addEventListener("click", () => openDetailsModal(item));
+
+    card.querySelector(".status-select").addEventListener("change", (e) => {
+      const oldStatus = item.status;
+      item.status = e.target.value;
+      if (item.status === "watched" && oldStatus !== "watched") {
+        if (item.mediaType === "movie") {
+          logWatchEvent(item, 0, item.runtime || 110);
+        } else if (item.totalEpisodes) {
+          const remaining = item.totalEpisodes - watchedCount(item);
+          if (remaining > 0) logWatchEvent(item, remaining, remaining * (item.runtime || 35));
+        }
+      }
+      saveItems();
+      renderAll();
+    });
+
+    card.querySelectorAll(".stars span[data-v]").forEach((star) => {
+      star.addEventListener("click", () => {
+        const v = +star.dataset.v;
+        item.rating = item.rating === v ? null : v;
+        saveItems();
+        renderLibrary();
+      });
+    });
+
+    let notesTimer = null;
+    card.querySelector(".notes").addEventListener("input", (e) => {
+      item.notes = e.target.value;
+      clearTimeout(notesTimer);
+      notesTimer = setTimeout(saveItems, 400);
+    });
+
+    card.querySelector(".reminder-select").addEventListener("change", (e) => {
+      item.reminderOffsetDays = e.target.value === "" ? null : +e.target.value;
+      saveItems();
+      checkReminders();
+    });
+
+    if (item.mediaType === "tv") {
+      const plus = card.querySelector(".ep-plus");
+      if (plus) plus.addEventListener("click", () => {
+        const next = nextEpisodeOf(item);
+        if (!next) return;
+        item.progress = next;
+        logWatchEvent(item, 1, item.runtime || 35);
+        saveItems();
+        renderLibrary();
+      });
+      const picker = card.querySelector(".ep-picker");
+      const setBtn = card.querySelector(".ep-set");
+      if (setBtn) setBtn.addEventListener("click", () => {
+        if (picker.classList.contains("hidden")) openEpisodePicker(item, picker);
+        else { picker.classList.add("hidden"); picker.innerHTML = ""; }
+      });
+    }
+
+    card.querySelector(".btn-del").addEventListener("click", () => {
+      if (!confirm(`Remove "${item.title}" from your library?`)) return;
+      state.items = state.items.filter((it) => it.id !== item.id);
+      saveItems();
+      renderAll();
+      toast(`Removed: ${item.title}`);
+    });
+  });
+}
+
+/* ---- Episode picker ---- */
+const seasonEpCache = {};   // "tmdbId-seasonNumber" -> episodes[] (in-memory, per session)
+
+async function openEpisodePicker(item, picker) {
+  picker.classList.remove("hidden");
+  if (!item.seasons || !item.seasons.length) {
+    picker.innerHTML = `<div class="pick-hint">Loading season data from TMDb…</div>`;
+    try { await refreshTvItem(item); saveItems(); } catch {
+      picker.innerHTML = `<div class="pick-hint">Couldn't load season data. Check your TMDb key in ⚙️ Settings.</div>`;
+      return;
+    }
+    if (!item.seasons || !item.seasons.length) {
+      picker.innerHTML = `<div class="pick-hint">TMDb has no season data for this show.</div>`;
+      return;
+    }
+  }
+  const curS = item.progress ? item.progress.s : item.seasons[0].n;
+  const curE = item.progress ? item.progress.e : 1;
+  picker.innerHTML = `
+    <select class="pick-season" title="Season">
+      ${item.seasons.map((s) =>
+        `<option value="${s.n}" ${s.n === curS ? "selected" : ""}>${escapeHtml(s.name || "Season " + s.n)} (${s.count} ep)</option>`).join("")}
+    </select>
+    <select class="pick-episode" title="Episode"></select>
+    <div class="row">
+      <button class="btn-mini ep-save">✓ Watched up to here</button>
+      <button class="btn-mini ep-clear" title="Clear progress">Reset</button>
+    </div>`;
+  const sSel = picker.querySelector(".pick-season");
+  const eSel = picker.querySelector(".pick-episode");
+
+  const fillEpisodes = async () => {
+    const sn = +sSel.value;
+    const season = item.seasons.find((x) => x.n === sn);
+    const count = Math.max(season ? season.count : 1, 1);
+    eSel.innerHTML = Array.from({ length: count }, (_, i) =>
+      `<option value="${i + 1}">Episode ${i + 1}</option>`).join("");
+    if (sn === curS && curE <= count) eSel.value = String(curE);
+    // Enrich options with real episode titles (falls back to plain numbers on failure).
+    try {
+      const key = item.tmdbId + "-" + sn;
+      if (!seasonEpCache[key]) {
+        seasonEpCache[key] = (await tmdbFetch(`/tv/${item.tmdbId}/season/${sn}`)).episodes || [];
+      }
+      for (const ep of seasonEpCache[key]) {
+        const opt = eSel.querySelector(`option[value="${ep.episode_number}"]`);
+        if (opt && ep.name) opt.textContent = `E${ep.episode_number} · ${ep.name}`;
+      }
+    } catch { /* numbers-only fallback */ }
+  };
+  sSel.addEventListener("change", fillEpisodes);
+  await fillEpisodes();
+
+  picker.querySelector(".ep-save").addEventListener("click", () => {
+    const before = watchedCount(item);
+    item.progress = { s: +sSel.value, e: +eSel.value };
+    const delta = watchedCount(item) - before;
+    if (delta > 0) logWatchEvent(item, delta, delta * (item.runtime || 35));
+    saveItems();
+    renderLibrary();
+  });
+  picker.querySelector(".ep-clear").addEventListener("click", () => {
+    item.progress = null;
+    saveItems();
+    renderLibrary();
+  });
+}
+
+/* ================= Calendar ================= */
+function upcomingEntries() {
+  return state.items
+    // Watchlist/Watching always show; a Watched show shows only if you've set a 🔔 reminder
+    // (so a finished show still pings you for a new season without cluttering your library).
+    .filter((it) => it.status === "watchlist" || it.status === "watching" ||
+                    (it.status === "watched" && it.reminderOffsetDays != null))
+    .map((it) => ({ item: it, date: effectiveDate(it), days: effectiveDate(it) ? daysUntil(effectiveDate(it)) : null }))
+    .filter((e) => e.date && e.days !== null && e.days >= 0)
+    .sort((a, b) => a.days - b.days);
+}
+
+function renderCalendar() {
+  const root = $("#calendarContent");
+  const entries = upcomingEntries();
+  const today = entries.filter((e) => e.days === 0);
+  const week = entries.filter((e) => e.days >= 1 && e.days <= 7);
+  const later = entries.filter((e) => e.days > 7);
+
+  const badge = $("#calBadge");
+  badge.textContent = (today.length + week.length) || "";
+
+  if (!entries.length) {
+    root.innerHTML = `
+      <div class="setup-card">
+        <div class="big">📅</div>
+        <h2>No upcoming releases</h2>
+        <p>Anything on your <b>Watchlist</b> or <b>Watching</b> list with a future release date, or an
+        upcoming TV episode, shows up here on its own. A <b>Watched</b> show joins them once you
+        set a 🔔 reminder on it, so a finished series can still ping you when a new season is announced.</p>
+      </div>`;
+    return;
+  }
+
+  const group = (title, list, chipClass, chipText) => list.length ? `
+    <div class="cal-group">
+      <h2 class="section-title">${title} <span class="count">${list.length}</span></h2>
+      ${list.map((e) => calRowHtml(e, chipClass, chipText)).join("")}
+    </div>` : "";
+
+  root.innerHTML =
+    group("🔴 Releasing Today", today, "today", () => "Today!") +
+    group("🟠 This Week", week, "week", (e) => e.days === 1 ? "Tomorrow" : `In ${e.days} days`) +
+    group("⚪ Later", later, "later", (e) => `In ${e.days} days`);
+}
+
+function calRowHtml(e, chipClass, chipText) {
+  const it = e.item;
+  const thumb = IMG(it.posterPath, "w92");
+  const epLabel = it.mediaType === "tv" && it.nextEpisodeLabel && it.nextAirDate === e.date
+    ? `<span class="next-ep" style="color:var(--amber)">${escapeHtml(it.nextEpisodeLabel)}</span>` : "";
+  const bell = it.reminderOffsetDays != null ? "🔔 " : "";
+  return `
+    <div class="cal-row">
+      ${thumb ? `<img src="${thumb}" alt="">` : `<div class="thumb-ph">🎬</div>`}
+      <div>
+        <div class="cal-title">${bell}${escapeHtml(it.title)}</div>
+        <div class="cal-meta">
+          <span class="type-badge ${it.mediaType}">${it.mediaType === "tv" ? "TV" : "Movie"}</span>
+          ${epLabel}
+          <span>${formatDate(e.date)}</span>
+        </div>
+      </div>
+      <span class="chip ${chipClass}">${chipText(e)}</span>
+    </div>`;
+}
+
+/* ================= Reminder banner + engine ================= */
+function renderBanner() {
+  const el = $("#reminderBanner");
+  const entries = upcomingEntries().filter((e) => e.days === 0);
+  if (!entries.length) { el.innerHTML = ""; return; }
+  const names = entries.map((e) => {
+    const it = e.item;
+    const ep = it.mediaType === "tv" && it.nextEpisodeLabel ? ` ${it.nextEpisodeLabel}` : "";
+    return `<b>${escapeHtml(it.title)}${ep}</b>`;
+  }).join(", ");
+  el.innerHTML = `<div class="banner">🎉 Releasing <b>today</b>: ${names}. Check the Calendar tab for details.</div>`;
+}
+
+function checkReminders() {
+  let changed = false;
+  for (const item of state.items) {
+    if (item.reminderOffsetDays == null) continue;
+    // Any status may hold a reminder; watched shows keep alerting for new-season air dates.
+    const dstr = effectiveDate(item);
+    if (!dstr) continue;
+    const days = daysUntil(dstr);
+    if (days === null || days < 0 || days > item.reminderOffsetDays) continue;
+    const key = item.id + "|" + dstr;
+    item.notifiedKeys = item.notifiedKeys || [];
+    if (item.notifiedKeys.includes(key)) continue;
+    item.notifiedKeys.push(key);
+    changed = true;
+
+    const ep = item.mediaType === "tv" && item.nextEpisodeLabel ? ` ${item.nextEpisodeLabel}` : "";
+    const when = days === 0 ? "releases today!" : `releases ${days === 1 ? "tomorrow" : "in " + days + " days"} (${formatDate(dstr)})`;
+    const msg = `${item.title}${ep} ${when}`;
+    toast("🔔 " + msg, 10000);
+    if (state.settings.notificationsEnabled && "Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification("Bearwatch reminder", { body: msg, icon: IMG(item.posterPath, "w92") || undefined });
+      } catch { /* some platforms restrict constructor */ }
+    }
+  }
+  if (changed) saveItems();
+  renderBanner();
+  renderCalendar(); // keeps the tab badge fresh
+}
+
+/* ================= Settings ================= */
+$("#apiKeyInput").value = state.settings.apiKey || "";
+$("#notifToggle").checked = !!state.settings.notificationsEnabled;
+
+$("#toggleKeyBtn").addEventListener("click", () => {
+  const inp = $("#apiKeyInput");
+  const show = inp.type === "password";
+  inp.type = show ? "text" : "password";
+  $("#toggleKeyBtn").textContent = show ? "🙈 Hide" : "👁 Show";
+});
+
+$("#saveKeyBtn").addEventListener("click", async () => {
+  const key = $("#apiKeyInput").value.trim();
+  const status = $("#keyStatus");
+  state.settings.apiKey = key;
+  saveSettings();
+  if (!key) {
+    status.className = "key-status err";
+    status.textContent = "Key cleared. Search is disabled until you add one.";
+    renderAll();
+    return;
+  }
+  status.className = "key-status";
+  status.textContent = "Testing key…";
+  try {
+    await tmdbFetch("/configuration");
+    status.className = "key-status ok";
+    status.textContent = "✓ Key works. Go ahead and search!";
+    renderAll();
+    refreshAllTvDates(true);
+  } catch (err) {
+    status.className = "key-status err";
+    status.textContent = "✗ " + (err.message === "NO_KEY" ? "No key provided." : err.message);
+  }
+});
+
+$("#notifToggle").addEventListener("change", async (e) => {
+  const status = $("#notifStatus");
+  if (e.target.checked) {
+    if (!("Notification" in window)) {
+      e.target.checked = false;
+      status.className = "key-status err";
+      status.textContent = "This browser doesn't support the Notification API.";
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      e.target.checked = false;
+      status.className = "key-status err";
+      status.textContent = "Permission denied. You can enable notifications for this site in your browser settings.";
+      return;
+    }
+    status.className = "key-status ok";
+    status.textContent = "✓ Notifications enabled (while this page is open).";
+  } else {
+    status.textContent = "";
+  }
+  state.settings.notificationsEnabled = e.target.checked;
+  saveSettings();
+});
+
+/* ---- Bulk reminder controls ---- */
+$("#applyRemAllBtn").addEventListener("click", () => {
+  // Fill in only titles with no reminder set; leave specific choices (e.g. "1 week before") alone.
+  let n = 0;
+  for (const it of state.items) {
+    if (it.reminderOffsetDays == null) { it.reminderOffsetDays = 0; n++; }
+  }
+  saveItems();
+  renderAll();
+  checkReminders();
+  const s = $("#remBulkStatus");
+  s.className = "key-status ok";
+  s.textContent = n ? `✓ Set ${n} title${n === 1 ? "" : "s"} to remind on release day.`
+                    : "All your titles already had a reminder, so nothing changed.";
+});
+
+$("#clearRemAllBtn").addEventListener("click", () => {
+  let n = 0;
+  for (const it of state.items) {
+    if (it.reminderOffsetDays != null) { it.reminderOffsetDays = null; n++; }
+  }
+  saveItems();
+  renderAll();
+  checkReminders();
+  const s = $("#remBulkStatus");
+  s.className = "key-status ok";
+  s.textContent = n ? `🔕 Turned off reminders on ${n} title${n === 1 ? "" : "s"}.`
+                    : "No reminders were set.";
+});
+
+/* ---- Backup ---- */
+$("#exportBtn").addEventListener("click", () => {
+  exportBackup();
+  $("#backupStatus").className = "key-status ok";
+  $("#backupStatus").textContent = "✓ Backup downloaded (" + state.items.length + " items).";
+});
+
+$("#importBtn").addEventListener("click", () => $("#importFile").click());
+$("#importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const status = $("#backupStatus");
+  try {
+    const data = JSON.parse(await file.text());
+    const items = Array.isArray(data) ? data : data.items;
+    if (!Array.isArray(items)) throw new Error("no items array found");
+    const valid = items.filter((it) => it && it.id && it.title && it.mediaType);
+    let added = 0;
+    for (const it of valid) {
+      if (!state.items.some((x) => x.id === it.id)) { state.items.push(it); added++; }
+    }
+    saveItems();
+    renderAll();
+    status.className = "key-status ok";
+    status.textContent = `✓ Imported ${added} new item${added === 1 ? "" : "s"} (${valid.length - added} already present).`;
+  } catch (err) {
+    status.className = "key-status err";
+    status.textContent = "✗ Import failed: " + err.message;
+  }
+});
+
+/* ================= Watch-history CSV import ================= */
+// Full CSV parser: quoted fields, escaped quotes, CRLF, multi-line fields.
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.length > 1 || row[0].trim() !== "") rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.length > 1 || row[0].trim() !== "") rows.push(row);
+  return rows;
+}
+
+function parseAnyDate(s) {   // Netflix M/D/YY, ISO YYYY-MM-DD(THH…), or anything Date.parse handles
+  if (!s) return 0;
+  s = String(s).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[1] - 1, +m[2]).getTime(); }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  const t = Date.parse(s);
+  return isNaN(t) ? 0 : t;
+}
+
+function normTypeHint(s) {
+  s = (s || "").toLowerCase();
+  if (!s) return null;
+  if (/(tv|series|show|mini)/.test(s)) return "tv";
+  if (/(movie|film|video)/.test(s)) return "movie";
+  return null;
+}
+
+// Detect columns from the header row (Netflix, Letterboxd, IMDb, Trakt, …) and
+// normalize every row to { title, date, year, rating (1–10), typeHint }.
+function extractHistoryRows(text) {
+  const raw = parseCsv(text);
+  if (!raw.length) return [];
+  const header = raw[0].map((h) => (h || "").trim().toLowerCase());
+  const findCol = (...tests) => header.findIndex((h) =>
+    tests.some((t) => (typeof t === "string" ? h === t : t.test(h))));
+  const headerish = header.some((h) => /(^|\s)(title|name|date|year|rating|type)(\s|$)/.test(h));
+  const hasHeader = headerish && !parseAnyDate(raw[0][1]);   // a real data row has a date in col 2
+  let cols = { title: 0, date: 1, year: -1, rating: -1, type: -1 };
+  let dataRows = raw;
+  if (hasHeader) {
+    dataRows = raw.slice(1);
+    cols = {
+      title: Math.max(findCol("title", "name", "movie", "show", /\btitle$/), 0),
+      date: findCol("date", /watched/, /date/),
+      year: findCol("year"),
+      rating: findCol(/^(your )?rating(10)?$/, /rating/),
+      type: findCol("title type", "type", "media type"),
+    };
+  }
+  const rows = [];
+  for (const r of dataRows) {
+    const title = (r[cols.title] || "").trim();
+    if (!title) continue;
+    rows.push({
+      title,
+      date: cols.date >= 0 ? (r[cols.date] || "").trim() : "",
+      year: cols.year >= 0 ? (parseInt(r[cols.year], 10) || null) : null,
+      rating: cols.rating >= 0 ? (parseFloat(r[cols.rating]) || null) : null,
+      typeHint: cols.type >= 0 ? normTypeHint(r[cols.type]) : null,
+    });
+  }
+  // Rating scale: if every value fits in 0–5 (e.g. Letterboxd stars), convert to /10.
+  const ratings = rows.map((r) => r.rating).filter((v) => v != null);
+  if (ratings.length && Math.max(...ratings) <= 5) {
+    for (const r of rows) if (r.rating != null) r.rating *= 2;
+  }
+  for (const r of rows) {
+    if (r.rating != null) r.rating = Math.max(1, Math.min(10, Math.round(r.rating)));
+  }
+  return rows;
+}
+
+// Split rows into TV shows (with per-episode info) and single titles (movies / one-offs).
+function groupNetflixRows(rows) {
+  const seasonRe = /^(.+?): (?:Season (\d+)|Limited Series|Part (\d+)|Volume (\d+)|Series (\d+)): (.+)$/;
+  const epNumRe = /^(.+?): Episode (\d+)(?::\s*(.+))?$/;
+  const prefixCount = new Map();
+  for (const r of rows) {
+    const c = r.title.indexOf(": ");
+    if (c > 0) {
+      const p = r.title.slice(0, c);
+      prefixCount.set(p, (prefixCount.get(p) || 0) + 1);
+    }
+  }
+  const shows = new Map();
+  const singles = new Map();
+  const addEp = (name, ep, r, date) => {
+    if (!shows.has(name)) shows.set(name, { eps: [], lastDate: 0, rating: null, year: null });
+    const s = shows.get(name);
+    s.eps.push(ep);
+    if (date > s.lastDate) s.lastDate = date;
+    if (r.rating && (!s.rating || r.rating > s.rating)) s.rating = r.rating;
+    if (r.year && !s.year) s.year = r.year;
+  };
+  for (const r of rows) {
+    const t = r.title;
+    if (!t) continue;
+    const date = parseAnyDate(r.date);
+    let m = t.match(seasonRe);
+    if (m) { addEp(m[1], { season: +(m[2] || m[3] || m[4] || m[5] || 1), epTitle: m[6] }, r, date); continue; }
+    m = t.match(epNumRe);
+    if (m) { addEp(m[1], { season: 1, epNum: +m[2], epTitle: m[3] || null }, r, date); continue; }
+    const c = t.indexOf(": ");
+    // Two or more rows sharing a "Show: " prefix ⇒ single-season show with titled episodes.
+    if (c > 0 && prefixCount.get(t.slice(0, c)) >= 2 && r.typeHint !== "movie") {
+      addEp(t.slice(0, c), { season: 1, epTitle: t.slice(c + 2) }, r, date);
+      continue;
+    }
+    const prev = singles.get(t);
+    if (!prev || date > prev.lastDate) {
+      singles.set(t, {
+        title: t,
+        showGuess: c > 0 ? t.slice(0, t.lastIndexOf(": ")) : null,
+        lastDate: date,
+        year: r.year || (prev && prev.year) || null,
+        rating: r.rating || (prev && prev.rating) || null,
+        typeHint: r.typeHint || (prev && prev.typeHint) || null,
+      });
+    }
+  }
+  return { shows, singles: [...singles.values()] };
+}
+
+function netflixMakeItem(r, mediaType, lastDate) {
+  return {
+    id: mediaType + "-" + r.id,
+    tmdbId: r.id,
+    mediaType,
+    title: (mediaType === "movie" ? r.title : r.name) || r.name || r.title,
+    releaseDate: ((mediaType === "movie" ? r.release_date : r.first_air_date)) || null,
+    posterPath: r.poster_path || null,
+    overview: r.overview || "",
+    status: "watched",
+    rating: null,
+    notes: "Imported from watch history" + (lastDate ? " · last watched " + new Date(lastDate).toLocaleDateString() : ""),
+    nextAirDate: null,
+    nextEpisodeLabel: null,
+    reminderOffsetDays: null,
+    notifiedKeys: [],
+    addedAt: lastDate || Date.now(),
+  };
+}
+
+// Furthest episode watched: highest season in the CSV, then the highest episode number in it,
+// taken directly from "Episode N" rows or by matching episode titles against TMDb season data.
+// Returns null (and thereby rejects a candidate show) when nothing lines up.
+async function netflixResolveProgress(item, eps) {
+  if (!item.seasons || !item.seasons.length) return null;
+  const maxS = Math.max(...eps.map((e) => e.season));
+  const season = item.seasons.find((x) => x.n === maxS);
+  if (!season) return null;
+  const inMax = eps.filter((e) => e.season === maxS);
+  let maxE = 0;
+  const epNumOf = (e) => e.epNum || +((e.epTitle || "").match(/^Episode (\d+)$/i)?.[1] || 0);
+  const needTitles = [];
+  for (const e of inMax) {
+    const n = epNumOf(e);
+    if (n) { if (n > maxE) maxE = n; }
+    else if (e.epTitle) needTitles.push(e);
+  }
+  if (needTitles.length) {
+    try {
+      const detail = await tmdbFetch(`/tv/${item.tmdbId}/season/${maxS}`);
+      const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      for (const e of needTitles) {
+        const hit = (detail.episodes || []).find((x) => norm(x.name) === norm(e.epTitle));
+        if (hit && hit.episode_number > maxE) maxE = hit.episode_number;
+      }
+    } catch { /* fall through */ }
+  }
+  if (!maxE || (season.count && maxE > season.count)) return null;
+  return { s: maxS, e: maxE };
+}
+
+async function importNetflixCsv(text) {
+  const btn = $("#netflixImportBtn");
+  const status = $("#netflixStatus");
+  const setStatus = (cls, msg) => { status.className = "key-status " + cls; status.textContent = msg; };
+  if (!(state.settings.apiKey || "").trim()) {
+    setStatus("err", "Add your TMDb API key first (above). It's needed to match titles.");
+    return;
+  }
+  const rows = extractHistoryRows(text);
+  if (!rows.length) {
+    setStatus("err", "No usable rows found. The CSV needs at least a title column.");
+    return;
+  }
+  const { shows, singles } = groupNetflixRows(rows);
+  const total = shows.size + singles.length;
+  let done = 0, skipped = 0;
+  const unmatched = [];
+  const proposals = [];
+  const proposedIds = new Set();
+  btn.disabled = true;
+  try {
+    for (const [name, info] of shows) {
+      setStatus("", `Matching ${++done}/${total}: ${name}…`);
+      try {
+        const cands = ((await tmdbFetch("/search/tv", { query: name })).results || []).slice(0, 3);
+        if (!cands.length) { unmatched.push(name); continue; }
+        // Try candidates until one's season/episode layout fits the history (disambiguates
+        // e.g. the One Piece anime vs. the live-action series sharing a name).
+        let chosen = null;
+        for (const c of cands) {
+          if (state.items.some((x) => x.id === "tv-" + c.id) || proposedIds.has("tv-" + c.id)) { chosen = "dup"; break; }
+          const trial = netflixMakeItem(c, "tv", info.lastDate);
+          try { await refreshTvItem(trial); } catch { continue; }
+          trial.progress = await netflixResolveProgress(trial, info.eps);
+          if (trial.progress) { chosen = trial; break; }
+          if (!chosen) chosen = trial;   // fallback: best search hit, no progress
+        }
+        if (chosen === "dup") { skipped++; continue; }
+        if (!chosen) { unmatched.push(name); continue; }
+        if (chosen.progress && chosen.totalEpisodes && watchedCount(chosen) < chosen.totalEpisodes) {
+          chosen.status = "watching";
+        }
+        if (info.rating) chosen.rating = info.rating;
+        proposals.push({ source: name, item: chosen });
+        proposedIds.add(chosen.id);
+      } catch { unmatched.push(name); }
+    }
+    for (const s of singles) {
+      setStatus("", `Matching ${++done}/${total}: ${s.title}…`);
+      try {
+        let r = null, mediaType = null;
+        if (s.typeHint === "movie" || s.typeHint === "tv") {
+          // Typed row (IMDb "Title Type", Trakt "type", …): search the right endpoint, year-hinted.
+          const ep = s.typeHint === "movie" ? "/search/movie" : "/search/tv";
+          const yearParam = s.typeHint === "movie" ? "primary_release_year" : "first_air_date_year";
+          const params = { query: s.title };
+          if (s.year) params[yearParam] = s.year;
+          r = ((await tmdbFetch(ep, params)).results || [])[0];
+          if (!r && s.year) r = ((await tmdbFetch(ep, { query: s.title })).results || [])[0];
+          mediaType = r && s.typeHint;
+        } else {
+          let list = ((await tmdbFetch("/search/multi", { query: s.title })).results || [])
+            .filter((x) => x.media_type === "movie" || x.media_type === "tv");
+          if (s.year && list.length > 1) {
+            const near = list.filter((x) =>
+              Math.abs((parseInt((x.release_date || x.first_air_date || "").slice(0, 4), 10) || 0) - s.year) <= 1);
+            if (near.length) list = near;
+          }
+          r = list[0];
+          mediaType = r && r.media_type;
+          if (!r && s.showGuess) {   // e.g. "Monster: The Ed Gein Story: Mother!" → show "Monster: The Ed Gein Story"
+            r = ((await tmdbFetch("/search/tv", { query: s.showGuess })).results || [])[0];
+            mediaType = r && "tv";
+          }
+        }
+        if (!r) { unmatched.push(s.title); continue; }
+        const dupId = mediaType + "-" + r.id;
+        if (state.items.some((x) => x.id === dupId) || proposedIds.has(dupId)) { skipped++; continue; }
+        const item = netflixMakeItem(r, mediaType, s.lastDate);
+        if (s.rating) item.rating = s.rating;
+        if (mediaType === "tv") {
+          try { await refreshTvItem(item); } catch { /* ok */ }
+        } else {
+          try {
+            const md = await tmdbFetch("/movie/" + r.id);
+            item.runtime = md.runtime || 0;
+            item.genres = (md.genres || []).map((g) => g.name);
+          } catch { /* backfilled later */ }
+        }
+        proposals.push({ source: s.title, item });
+        proposedIds.add(item.id);
+      } catch { unmatched.push(s.title); }
+    }
+  } finally {
+    btn.disabled = false;
+  }
+  if (!proposals.length) {
+    setStatus("err", "Nothing new to import." +
+      (skipped ? ` ${skipped} title${skipped === 1 ? " is" : "s are"} already in your library.` : "") +
+      (unmatched.length ? ` Couldn't match: ${unmatched.join(", ")}.` : ""));
+    return;
+  }
+  setStatus("", `Matched ${proposals.length} of ${total} titles. Have a look below, untick anything that's wrong, then confirm.`);
+  renderNetflixPreview(proposals, skipped, unmatched);
+}
+
+function renderNetflixPreview(proposals, skipped, unmatched) {
+  const box = $("#netflixPreview");
+  const progLabel = (it) => {
+    let s;
+    if (it.mediaType !== "tv") s = "Movie · Watched";
+    else {
+      s = "TV · " + (it.status === "watching" ? "Watching" : "Watched");
+      if (it.progress) s += ` · up to S${it.progress.s} E${it.progress.e}`;
+    }
+    if (it.rating) s += ` · ★ ${it.rating}`;
+    return s;
+  };
+  box.innerHTML = `
+    <div class="nf-list">
+      ${proposals.map((p, i) => `
+        <label class="nf-row">
+          <input type="checkbox" data-i="${i}" checked>
+          ${p.item.posterPath ? `<img src="${IMG(p.item.posterPath, "w92")}" alt="" loading="lazy">` : `<div class="thumb-ph">🎬</div>`}
+          <div>
+            <div class="nf-src">${escapeHtml(p.source)}</div>
+            <div class="nf-match">→ ${escapeHtml(p.item.title)} (${yearOf(p.item.releaseDate)}) · ${progLabel(p.item)}</div>
+          </div>
+        </label>`).join("")}
+    </div>
+    ${unmatched.length ? `<div class="pick-hint" style="margin-top:8px">Couldn't match: ${escapeHtml(unmatched.join(", "))}. Add these manually via the search bar.</div>` : ""}
+    ${skipped ? `<div class="pick-hint">${skipped} title${skipped === 1 ? "" : "s"} skipped, already in your library.</div>` : ""}
+    <div class="key-row" style="margin-top:10px">
+      <button class="btn" id="nfConfirmBtn" type="button">✓ Add selected (<span id="nfCount">${proposals.length}</span>)</button>
+      <button class="btn secondary" id="nfCancelBtn" type="button">Cancel</button>
+    </div>`;
+  const status = $("#netflixStatus");
+  const boxes = [...box.querySelectorAll('input[type="checkbox"]')];
+  boxes.forEach((b) => b.addEventListener("change", () => {
+    $("#nfCount").textContent = boxes.filter((x) => x.checked).length;
+  }));
+  $("#nfCancelBtn").addEventListener("click", () => {
+    box.innerHTML = "";
+    status.className = "key-status";
+    status.textContent = "Import cancelled, nothing was added.";
+  });
+  $("#nfConfirmBtn").addEventListener("click", () => {
+    const chosen = boxes.filter((b) => b.checked).map((b) => proposals[+b.dataset.i]);
+    for (const p of chosen) {
+      if (!state.items.some((x) => x.id === p.item.id)) state.items.push(p.item);
+    }
+    saveItems();
+    renderAll();
+    box.innerHTML = "";
+    status.className = "key-status ok";
+    status.textContent = `✓ Added ${chosen.length} title${chosen.length === 1 ? "" : "s"} to your library.`;
+  });
+}
+
+$("#netflixImportBtn").addEventListener("click", () => $("#netflixFile").click());
+$("#netflixFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f) importNetflixCsv(await f.text());
+});
+
+/* ================= Details modal ================= */
+const detailCache = {};   // item.id -> TMDb detail (with videos), per session
+
+function closeModal() {
+  $("#modalOverlay").classList.add("hidden");
+  $("#modalBody").innerHTML = "";
+}
+$("#modalOverlay").addEventListener("click", (e) => {
+  if (e.target === $("#modalOverlay")) closeModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#modalOverlay").classList.contains("hidden")) closeModal();
+});
+
+async function openDetailsModal(item) {
+  const overlay = $("#modalOverlay");
+  const body = $("#modalBody");
+  overlay.classList.remove("hidden");
+
+  const render = (d) => {
+    const videos = d?.videos?.results || [];
+    const trailer = videos.find((v) => v.site === "YouTube" && v.type === "Trailer") ||
+                    videos.find((v) => v.site === "YouTube" && v.type === "Teaser");
+    const genres = d?.genres ? d.genres.map((g) => g.name) : (item.genres || []);
+    const score = d?.vote_average ? d.vote_average.toFixed(1) : null;
+    const runtimeLabel = item.mediaType === "movie"
+      ? ((d?.runtime || item.runtime) ? `${d?.runtime || item.runtime} min` : "")
+      : (item.runtime ? `~${item.runtime} min/ep` : "");
+    const tvBits = item.mediaType === "tv" && (d?.number_of_seasons || item.seasons)
+      ? `${d?.number_of_seasons || item.seasons.length} season${(d?.number_of_seasons || item.seasons.length) === 1 ? "" : "s"} · ${d?.number_of_episodes || item.totalEpisodes || "?"} ep`
+      : "";
+    const overview = d?.overview || item.overview || "No synopsis available.";
+    const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`;
+
+    let providersHtml = "";
+    const wp = d?.["watch/providers"]?.results;
+    if (wp && Object.keys(wp).length) {
+      const regions = Object.keys(wp).sort();
+      const region = regions.includes(state.settings.region) ? state.settings.region
+        : (regions.includes("US") ? "US" : regions[0]);
+      const rp = wp[region];
+      const groups = [["flatrate", "Stream"], ["free", "Free"], ["ads", "Free*"], ["rent", "Rent"], ["buy", "Buy"]];
+      const rows = groups.map(([k, label]) => {
+        const list = rp && rp[k];
+        if (!list || !list.length) return "";
+        return `<div class="prov-group"><span class="prov-label">${label}</span>
+          ${list.map((p) => p.logo_path
+            ? `<img class="prov-logo" src="${IMG(p.logo_path, "w92")}" alt="${escapeHtml(p.provider_name)}" title="${escapeHtml(p.provider_name)}">`
+            : `<span class="genre-chip">${escapeHtml(p.provider_name)}</span>`).join("")}
+        </div>`;
+      }).join("");
+      providersHtml = `
+        <div class="modal-providers">
+          <div class="prov-head">📡 Where to watch
+            <select id="provRegion" title="Country">${regions.map((r) =>
+              `<option${r === region ? " selected" : ""}>${r}</option>`).join("")}</select>
+          </div>
+          ${rows || `<div class="prov-none">Not on any streaming service in ${region} right now.</div>`}
+          ${rp?.link ? `<a class="prov-link" href="${rp.link}" target="_blank" rel="noopener">All options on JustWatch ↗</a>` : ""}
+          <div class="pick-hint" style="margin-top:8px">Streaming data from JustWatch via TMDb. Availability varies by country.</div>
+        </div>`;
+    } else if (d) {
+      providersHtml = `<div class="modal-providers"><div class="prov-head">📡 Where to watch</div>
+        <div class="prov-none">No streaming availability data for this title.</div></div>`;
+    }
+    body.innerHTML = `
+      <button class="modal-close" type="button" title="Close">✕</button>
+      <div class="modal-hero">
+        ${item.posterPath ? `<img src="${IMG(item.posterPath, "w342")}" alt="">` : `<div class="poster-ph">🎬</div>`}
+        <div>
+          <h2>${escapeHtml(item.title)} <span class="year">(${yearOf(item.releaseDate)})</span></h2>
+          <div class="modal-meta">
+            <span class="type-badge ${item.mediaType}">${item.mediaType === "tv" ? "TV" : "Movie"}</span>
+            ${score ? `<span class="score">★ ${score}</span>` : ""}
+            ${runtimeLabel ? `<span>${runtimeLabel}</span>` : ""}
+            ${tvBits ? `<span>${tvBits}</span>` : ""}
+          </div>
+          ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
+          <div class="modal-actions">
+            ${trailer ? `<a class="btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
+            <a class="btn secondary" href="${tmdbUrl}" target="_blank" rel="noopener">TMDb page</a>
+          </div>
+        </div>
+      </div>
+      <p class="modal-overview">${escapeHtml(overview)}</p>
+      ${providersHtml}`;
+    body.querySelector(".modal-close").addEventListener("click", closeModal);
+    const provSel = body.querySelector("#provRegion");
+    if (provSel) provSel.addEventListener("change", () => {
+      state.settings.region = provSel.value;
+      saveSettings();
+      render(d);   // re-render the modal for the newly chosen country
+    });
+  };
+
+  render(detailCache[item.id] || null);   // instant view from stored data
+  if (!detailCache[item.id]) {
+    try {
+      detailCache[item.id] = await tmdbFetch(
+        `/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`,
+        { append_to_response: "videos,watch/providers" });
+      if (!overlay.classList.contains("hidden")) render(detailCache[item.id]);
+      // opportunistically persist fresher genre data
+      if (detailCache[item.id].genres) {
+        item.genres = detailCache[item.id].genres.map((g) => g.name);
+        saveItems();
+      }
+    } catch { /* stored-data view stays */ }
+  }
+}
+
+/* ================= Recommendations ================= */
+async function loadRecommendations(force = false) {
+  if (!(state.settings.apiKey || "").trim() || !state.items.length) {
+    state.recs = [];
+    renderRecs();
+    return;
+  }
+  if (state.recs && state.recs.length && !force) { renderRecs(); return; }
+  // Seed from your highest-rated titles; fall back to what you've watched most recently.
+  let seeds = state.items.filter((it) => it.rating >= 7).sort((a, b) => b.rating - a.rating);
+  if (!seeds.length) {
+    seeds = state.items.filter((it) => it.status !== "watchlist")
+      .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  }
+  const seen = new Map();
+  for (const s of seeds.slice(0, 3)) {
+    try {
+      const data = await tmdbFetch(`/${s.mediaType === "movie" ? "movie" : "tv"}/${s.tmdbId}/recommendations`);
+      for (const r of (data.results || []).slice(0, 10)) {
+        r.media_type = r.media_type || (r.title ? "movie" : "tv");
+        if (r.media_type !== "movie" && r.media_type !== "tv") continue;
+        const id = r.media_type + "-" + r.id;
+        if (state.items.some((x) => x.id === id) || seen.has(id)) continue;
+        seen.set(id, r);
+      }
+    } catch { /* seed failed, try next */ }
+  }
+  state.recs = [...seen.values()].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 12);
+  renderRecs();
+}
+
+// A recommendation isn't a library item yet, so wrap it so the details modal can show it.
+function recToItem(r) {
+  return {
+    id: r.media_type + "-" + r.id,
+    tmdbId: r.id,
+    mediaType: r.media_type,
+    title: (r.media_type === "movie" ? r.title : r.name) || "",
+    releaseDate: (r.media_type === "movie" ? r.release_date : r.first_air_date) || null,
+    posterPath: r.poster_path || null,
+    overview: r.overview || "",
+  };
+}
+
+function renderRecs() {
+  const el = $("#recsSection");
+  const recs = (state.recs || []).filter((r) => !state.items.some((x) => x.id === r.media_type + "-" + r.id));
+  if (!recs.length) { el.innerHTML = ""; return; }
+  const closed = !!(state.settings.collapsedSections || {}).recs;
+  el.innerHTML = `
+    <h2 class="section-title sec-toggle" data-sec="recs" title="Click to ${closed ? "expand" : "collapse"}">
+      <span class="chev ${closed ? "closed" : ""}">▾</span>✨ You might like
+      <span class="count">${recs.length}</span>
+      ${closed ? "" : `<button class="btn-mini recs-head-btn" id="recsRefresh" type="button" title="Refresh suggestions">↻ Refresh</button>`}
+    </h2>
+    ${closed ? "" : `<div class="recs-row">
+      ${recs.map((r) => {
+        const title = r.media_type === "movie" ? r.title : r.name;
+        const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
+        return `
+          <div class="rec-card" data-id="${r.media_type}-${r.id}">
+            <div class="rec-poster" title="Show details">
+              ${r.poster_path ? `<img src="${IMG(r.poster_path, "w185")}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
+            </div>
+            <div class="rec-title" title="${escapeHtml(title || "")}">${escapeHtml(title || "")}</div>
+            <div class="rec-meta"><span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span> ${yearOf(date)}</div>
+            <button class="btn-mini rec-add" type="button">+ Watchlist</button>
+          </div>`;
+      }).join("")}
+    </div>`}`;
+  el.querySelector(".sec-toggle").addEventListener("click", () => toggleSection("recs"));
+  const refresh = el.querySelector("#recsRefresh");
+  if (refresh) refresh.addEventListener("click", (e) => {
+    e.stopPropagation();   // don't collapse the section
+    refresh.disabled = true;
+    loadRecommendations(true);
+  });
+  el.querySelectorAll(".rec-card").forEach((card) => {
+    const rec = recs.find((r) => r.media_type + "-" + r.id === card.dataset.id);
+    card.querySelector(".rec-poster").addEventListener("click", () => openDetailsModal(recToItem(rec)));
+    card.querySelector(".rec-add").addEventListener("click", async () => {
+      await selectResult(rec);
+      renderRecs();   // drops the newly-added title from the row
+    });
+  });
+}
+
+/* ================= Monthly backup nudge ================= */
+const LS_LAST_BACKUP = "mt_lastBackup";
+const LS_BACKUP_SNOOZE = "mt_backupSnooze";
+
+function exportBackup() {
+  const blob = new Blob(
+    [JSON.stringify({ exportedAt: new Date().toISOString(), items: state.items }, null, 2)],
+    { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "media-tracker-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  localStorage.setItem(LS_LAST_BACKUP, String(Date.now()));
+  renderBackupNudge();
+}
+
+function renderBackupNudge() {
+  const el = $("#backupNudge");
+  const last = +localStorage.getItem(LS_LAST_BACKUP) || 0;
+  const snooze = +localStorage.getItem(LS_BACKUP_SNOOZE) || 0;
+  const due = state.items.length >= 5 &&
+    Date.now() - last > 30 * 86400 * 1000 &&
+    Date.now() > snooze;
+  if (!due) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <div class="banner">💾 ${last ? "It's been over a month since your last backup." : "You haven't backed up your library yet."}
+      Your data lives only in this browser. Want to download a JSON copy?
+      <span style="white-space:nowrap">
+        <button class="btn" id="nudgeExportBtn" type="button" style="padding:5px 12px;font-size:12.5px;margin-left:8px">⬇ Export now</button>
+        <button class="btn secondary" id="nudgeLaterBtn" type="button" style="padding:5px 12px;font-size:12.5px">Remind me in a week</button>
+      </span>
+    </div>`;
+  $("#nudgeExportBtn").addEventListener("click", exportBackup);
+  $("#nudgeLaterBtn").addEventListener("click", () => {
+    localStorage.setItem(LS_BACKUP_SNOOZE, String(Date.now() + 7 * 86400 * 1000));
+    renderBackupNudge();
+  });
+}
+
+/* ================= Stats view ================= */
+function epsSeenOf(it) {
+  if (it.mediaType !== "tv") return 0;
+  return it.progress ? watchedCount(it) : (it.status === "watched" ? (it.totalEpisodes || 0) : 0);
+}
+function itemWatchedMinutes(it) {
+  if (it.mediaType === "movie") return it.status === "watched" ? (it.runtime || 110) : 0;
+  return epsSeenOf(it) * (it.runtime || 35);
+}
+const fmtH = (m) => Math.round(m / 60) + " h";
+
+function barRows(entries, unit) {
+  const max = Math.max(...entries.map((e) => e[1]), 1);
+  return entries.map(([label, v]) => `
+    <div class="bar-row">
+      <span class="bl" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+      <div class="bt"><div class="bf" style="width:${Math.max(3, (v / max) * 100)}%"></div></div>
+      <span class="bv">${unit(v)}</span>
+    </div>`).join("");
+}
+
+function renderStatsView() {
+  const root = $("#statsContent");
+  if (!state.items.length) {
+    root.innerHTML = `<div class="setup-card"><div class="big">📊</div><h2>No stats yet</h2>
+      <p>Add some titles to your library and the numbers will appear here.</p></div>`;
+    return;
+  }
+  const { min, eps, moviesWatched } = libraryStats(state.items);
+  const rated = state.items.filter((i) => i.rating);
+  const avgRating = rated.length
+    ? (rated.reduce((a, b) => a + b.rating, 0) / rated.length).toFixed(1) : "—";
+
+  let backlogMin = 0;
+  for (const it of state.items.filter((i) => i.status === "watchlist")) {
+    backlogMin += it.mediaType === "movie"
+      ? (it.runtime || 110)
+      : Math.max(0, (it.totalEpisodes || 0) - (it.progress ? watchedCount(it) : 0)) * (it.runtime || 35);
+  }
+
+  const genreMin = {};
+  for (const it of state.items) {
+    const m = itemWatchedMinutes(it);
+    if (!m) continue;
+    const gs = it.genres && it.genres.length ? it.genres : ["Uncategorised"];
+    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m / gs.length;
+  }
+  const topGenres = Object.entries(genreMin).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  const dist = Array.from({ length: 10 }, (_, i) =>
+    [`${i + 1} ★`, state.items.filter((it) => it.rating === i + 1).length]).reverse();
+
+  const topRated = [...rated].sort((a, b) => b.rating - a.rating || a.title.localeCompare(b.title)).slice(0, 5);
+  const topShows = state.items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
+    .sort((a, b) => epsSeenOf(b) - epsSeenOf(a)).slice(0, 5);
+
+  const decMin = {};
+  for (const it of state.items) {
+    const m = itemWatchedMinutes(it);
+    if (!m || !it.releaseDate) continue;
+    const d = it.releaseDate.slice(0, 3) + "0s";
+    decMin[d] = (decMin[d] || 0) + m;
+  }
+  const decades = Object.entries(decMin).sort((a, b) => a[0].localeCompare(b[0]));
+
+  const tv = state.items.filter((i) => i.mediaType === "tv");
+  const tvDone = tv.filter((i) => i.status === "watched" || (i.totalEpisodes && epsSeenOf(i) >= i.totalEpisodes)).length;
+  const tvGoing = tv.filter((i) => i.status === "watching").length;
+
+  // Viewing over time, from the watch-event log (fills up as you use the app).
+  const events = loadJSON(LS_EVENTS, []);
+  const byMonth = {};
+  for (const e of events) {
+    const d = new Date(e.t);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    byMonth[k] = (byMonth[k] || 0) + e.min;
+  }
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(); d.setMonth(d.getMonth() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months.push([d.toLocaleDateString(undefined, { month: "short" }), byMonth[k] || 0]);
+  }
+  const hasEvents = events.length > 0;
+
+  root.innerHTML = `
+    <div class="stats-head">
+      <h2>📊 Your viewing stats</h2>
+      <button class="btn" id="wrappedBtn" type="button">🎁 Your Wrapped</button>
+    </div>
+    <div class="stat-tiles">
+      <div class="stat-tile"><div class="v">${Math.round(min / 60)}</div><div class="l">hours watched</div></div>
+      <div class="stat-tile"><div class="v">${moviesWatched}</div><div class="l">movies watched</div></div>
+      <div class="stat-tile"><div class="v">${eps}</div><div class="l">episodes watched</div></div>
+      <div class="stat-tile"><div class="v">${avgRating}</div><div class="l">avg rating</div></div>
+      <div class="stat-tile"><div class="v">${Math.round(backlogMin / 60)}</div><div class="l">hours in watchlist</div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-panel"><h3>🎭 Hours by genre</h3>
+        ${topGenres.length ? barRows(topGenres, fmtH) : `<div class="stat-hint">No genre data yet.</div>`}</div>
+      <div class="stat-panel"><h3>⭐ Your rating distribution</h3>
+        ${rated.length ? barRows(dist.filter(d => d[1] > 0), (v) => v + "×") : `<div class="stat-hint">Rate some titles to see this.</div>`}</div>
+      <div class="stat-panel"><h3>📅 Viewing over time (last 12 months)</h3>
+        ${hasEvents ? barRows(months, fmtH) : `<div class="stat-hint">This chart fills up as you use the app.
+          Every +1 Ep, episode-picker save, or "mark watched" from here on logs a timestamped watch event.
+          Check back in a few weeks!</div>`}</div>
+      <div class="stat-panel"><h3>🏆 Your top rated</h3>
+        ${topRated.length ? `<div class="toplist">${topRated.map((it, i) => `
+          <div class="tl-row"><span class="tl-rank">${i + 1}</span>
+            <span class="tl-title">${escapeHtml(it.title)}</span>
+            <span class="tl-val">★ ${it.rating}</span></div>`).join("")}</div>`
+        : `<div class="stat-hint">Rate some titles to see this.</div>`}</div>
+      <div class="stat-panel"><h3>📺 Most-watched shows</h3>
+        ${topShows.length ? `<div class="toplist">${topShows.map((it, i) => `
+          <div class="tl-row"><span class="tl-rank">${i + 1}</span>
+            <span class="tl-title">${escapeHtml(it.title)}</span>
+            <span class="tl-val">${epsSeenOf(it)} ep</span></div>`).join("")}</div>`
+        : `<div class="stat-hint">No episode progress yet.</div>`}</div>
+      <div class="stat-panel"><h3>🕰 Hours by release decade</h3>
+        ${decades.length ? barRows(decades, fmtH) : `<div class="stat-hint">No data yet.</div>`}
+        <div class="stat-hint" style="margin-top:12px">TV: ${tvDone} finished · ${tvGoing} in progress · ${tv.length - tvDone - tvGoing} parked</div></div>
+    </div>`;
+  $("#wrappedBtn").addEventListener("click", openWrapped);
+}
+
+/* ================= Wrapped ================= */
+function openWrapped() {
+  const { min, eps, moviesWatched } = libraryStats(state.items);
+  const hours = Math.round(min / 60);
+  const days = (min / 1440).toFixed(1);
+  const genreMin = {};
+  for (const it of state.items) {
+    const m = itemWatchedMinutes(it);
+    if (!m) continue;
+    const gs = it.genres && it.genres.length ? it.genres : [];
+    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m / gs.length;
+  }
+  const topGenre = Object.entries(genreMin).sort((a, b) => b[1] - a[1])[0];
+  const topRated = [...state.items].filter((i) => i.rating).sort((a, b) => b.rating - a.rating)[0];
+  const topShow = state.items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
+    .sort((a, b) => epsSeenOf(b) - epsSeenOf(a))[0];
+  const events = loadJSON(LS_EVENTS, []);
+  let busiest = null;
+  if (events.length) {
+    const byMonth = {};
+    for (const e of events) {
+      const d = new Date(e.t);
+      const k = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      byMonth[k] = (byMonth[k] || 0) + e.min;
+    }
+    busiest = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
+  }
+  const flights = (min / 60 / 14).toFixed(1);   // Sydney → LA is ~14 h
+
+  const body = $("#modalBody");
+  $("#modalOverlay").classList.remove("hidden");
+  body.innerHTML = `
+    <button class="modal-close" type="button" title="Close">✕</button>
+    <div class="wrapped-card">
+      <div class="w-kicker">Your Bearwatch Wrapped</div>
+      <div class="w-big">${hours} hours</div>
+      <div class="w-sub">of movies and shows, which is ${days} days of screen time</div>
+      <div class="w-row">
+        <div class="w-stat"><div class="v">🍿 ${moviesWatched}</div><div class="l">movies</div></div>
+        <div class="w-stat"><div class="v">📺 ${eps}</div><div class="l">episodes</div></div>
+        <div class="w-stat"><div class="v">⭐ ${state.items.filter((i) => i.rating).length}</div><div class="l">titles rated</div></div>
+      </div>
+      ${topGenre ? `<div class="w-line">Your genre of choice: <b>${escapeHtml(topGenre[0])}</b> (${fmtH(topGenre[1])})</div>` : ""}
+      ${topRated ? `<div class="w-line">Your #1: <b>${escapeHtml(topRated.title)}</b>, you gave it ★ ${topRated.rating}</div>` : ""}
+      ${topShow ? `<div class="w-line">Most binged: <b>${escapeHtml(topShow.title)}</b> (${epsSeenOf(topShow)} episodes)</div>` : ""}
+      ${busiest ? `<div class="w-line">Biggest month: <b>${escapeHtml(busiest[0])}</b> (${fmtH(busiest[1])})</div>` : ""}
+      <div class="w-fun">That's roughly ${flights} Sydney → LA flights of watching. No judgement. 🎬</div>
+    </div>`;
+  body.querySelector(".modal-close").addEventListener("click", closeModal);
+}
+
+/* ================= View switching ================= */
+function switchView(view) {
+  state.view = view;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+  ["library", "calendar", "stats", "settings"].forEach((v) =>
+    $("#view-" + v).classList.toggle("hidden", v !== view));
+  if (view === "stats") renderStatsView();
+}
+document.querySelectorAll(".tab").forEach((t) =>
+  t.addEventListener("click", () => switchView(t.dataset.view)));
+
+/* ---- Library filter toolbar (type/sort/genre persist across sessions) ---- */
+function saveLibPrefs() {
+  state.settings.libPrefs = { type: state.libType, sort: state.libSort, genre: state.libGenre };
+  saveSettings();
+}
+document.querySelectorAll(".pill").forEach((p) =>
+  p.addEventListener("click", () => {
+    state.libType = p.dataset.type;
+    document.querySelectorAll(".pill").forEach((x) => x.classList.toggle("active", x === p));
+    saveLibPrefs();
+    renderLibrary();
+  }));
+$("#libFilter").addEventListener("input", (e) => {
+  state.libQuery = e.target.value;
+  renderLibrary();
+});
+$("#libSort").addEventListener("change", (e) => {
+  state.libSort = e.target.value;
+  saveLibPrefs();
+  renderLibrary();
+});
+$("#genreFilter").addEventListener("change", (e) => {
+  state.libGenre = e.target.value;
+  saveLibPrefs();
+  renderLibrary();
+});
+
+/* ================= Boot ================= */
+function renderAll() {
+  renderLibrary();
+  renderCalendar();
+  renderBanner();
+  renderBackupNudge();
+  renderRecs();
+}
+
+// Auto-detect streaming region from the browser locale on first run (changeable in the modal).
+if (!state.settings.region) {
+  const cc = (navigator.language || "").split("-")[1];
+  state.settings.region = cc && cc.length === 2 ? cc.toUpperCase() : "US";
+  saveSettings();
+}
+
+// Restore persisted library view preferences before first render.
+{
+  const lp = state.settings.libPrefs || {};
+  state.libType = lp.type || "all";
+  state.libSort = lp.sort || "added";
+  state.libGenre = lp.genre || "";
+  document.querySelectorAll(".pill").forEach((p) =>
+    p.classList.toggle("active", p.dataset.type === state.libType));
+  $("#libSort").value = state.libSort;
+}
+
+renderAll();
+checkReminders();
+refreshAllTvDates();
+backfillMovieDetails();
+loadRecommendations();
+setInterval(checkReminders, 60 * 1000);
+</script>
+</body>
+</html>

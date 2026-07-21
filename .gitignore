@@ -1,0 +1,12 @@
+# Personal library backups — never publish these (they contain your own data)
+media-tracker-backup-*.json
+*.backup.json
+
+# Local tooling / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.vscode/
+.idea/
+.claude/
