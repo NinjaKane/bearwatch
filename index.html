@@ -199,7 +199,17 @@
   .rec-card {
     flex: 0 0 132px; background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 10px; overflow: hidden; display: flex; flex-direction: column;
+    position: relative;
   }
+  .rec-dismiss {
+    position: absolute; top: 6px; right: 6px; z-index: 2;
+    width: 22px; height: 22px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 12px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    opacity: .55; transition: opacity .15s, background .15s;
+  }
+  .rec-card:hover .rec-dismiss { opacity: 1; }
+  .rec-dismiss:hover { background: var(--accent); }
   .rec-card img, .rec-card .poster-ph { width: 100%; aspect-ratio: 2/3; object-fit: cover; font-size: 30px; }
   .rec-card .rec-title {
     font-size: 12.5px; font-weight: 700; padding: 8px 9px 2px; line-height: 1.3;
@@ -618,10 +628,12 @@
 const LS_ITEMS = "mt_items";
 const LS_SETTINGS = "mt_settings";
 const LS_TV_REFRESH = "mt_lastTvRefresh";
+const LS_DISMISSED = "mt_dismissedRecs";
 
 const state = {
   items: loadJSON(LS_ITEMS, []),
   settings: Object.assign({ apiKey: "", notificationsEnabled: false }, loadJSON(LS_SETTINGS, {})),
+  dismissedRecs: loadJSON(LS_DISMISSED, []),
   view: "library",
 };
 
@@ -633,6 +645,7 @@ function loadJSON(key, fallback) {
 }
 function saveItems() { localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); }
 function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(state.settings)); }
+function saveDismissed() { localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs)); }
 
 /* ================= Utilities ================= */
 const $ = (sel) => document.querySelector(sel);
@@ -2002,12 +2015,13 @@ async function loadRecommendations(force = false) {
         r.media_type = r.media_type || (r.title ? "movie" : "tv");
         if (r.media_type !== "movie" && r.media_type !== "tv") continue;
         const id = r.media_type + "-" + r.id;
-        if (state.items.some((x) => x.id === id) || seen.has(id)) continue;
+        if (state.items.some((x) => x.id === id) || seen.has(id) || state.dismissedRecs.includes(id)) continue;
         seen.set(id, r);
       }
     } catch { /* seed failed, try next */ }
   }
-  state.recs = [...seen.values()].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 12);
+  // Keep a deeper pool so dismissing a card can be refilled without a new fetch.
+  state.recs = [...seen.values()].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40);
   renderRecs();
 }
 
@@ -2026,7 +2040,10 @@ function recToItem(r) {
 
 function renderRecs() {
   const el = $("#recsSection");
-  const recs = (state.recs || []).filter((r) => !state.items.some((x) => x.id === r.media_type + "-" + r.id));
+  const recs = (state.recs || []).filter((r) => {
+    const id = r.media_type + "-" + r.id;
+    return !state.items.some((x) => x.id === id) && !state.dismissedRecs.includes(id);
+  }).slice(0, 12);
   if (!recs.length) { el.innerHTML = ""; return; }
   const closed = !!(state.settings.collapsedSections || {}).recs;
   el.innerHTML = `
@@ -2041,6 +2058,7 @@ function renderRecs() {
         const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
         return `
           <div class="rec-card" data-id="${r.media_type}-${r.id}">
+            <button class="rec-dismiss" type="button" title="Not interested, remove this suggestion" aria-label="Dismiss suggestion">✕</button>
             <div class="rec-poster" title="Show details">
               ${r.poster_path ? `<img src="${IMG(r.poster_path, "w185")}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
             </div>
@@ -2063,6 +2081,12 @@ function renderRecs() {
     card.querySelector(".rec-add").addEventListener("click", async () => {
       await selectResult(rec);
       renderRecs();   // drops the newly-added title from the row
+    });
+    card.querySelector(".rec-dismiss").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!state.dismissedRecs.includes(card.dataset.id)) state.dismissedRecs.push(card.dataset.id);
+      saveDismissed();
+      renderRecs();   // removes it and pulls the next suggestion into view
     });
   });
 }
