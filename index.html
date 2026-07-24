@@ -228,8 +228,13 @@
   }
   .prov-group { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .prov-label { font-size: 12px; color: var(--text-faint); width: 46px; flex-shrink: 0; }
-  .prov-logo { width: 34px; height: 34px; border-radius: 8px; }
+  .prov-logo { width: 34px; height: 34px; border-radius: 8px; display: block; }
+  .prov-a { display: inline-flex; border-radius: 8px; transition: transform .12s, box-shadow .12s; }
+  .prov-a:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px var(--accent-hover); }
   .prov-link { font-size: 12.5px; color: var(--accent-hover); }
+  /* Stremio brand-purple action button */
+  .btn.stremio { background: #7b5bf5; border-color: #7b5bf5; color: #fff; }
+  .btn.stremio:hover { background: #8f72f7; border-color: #8f72f7; }
   .prov-none { font-size: 13px; color: var(--text-faint); margin-bottom: 8px; }
 
   /* ---------- Collapsible sections ---------- */
@@ -2101,6 +2106,11 @@ async function openDetailsModal(item) {
     const overview = d?.overview || item.overview || "No synopsis available.";
     const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`;
     const inLibrary = state.items.some((x) => x.id === item.id);
+    // Stremio uses IMDb IDs as its content IDs (via Cinemeta), so once we know
+    // the title's IMDb ID we can deep-link straight to it in the Stremio app.
+    const imdb = d && (d.imdb_id || (d.external_ids && d.external_ids.imdb_id));
+    const stremioType = item.mediaType === "tv" ? "series" : "movie";
+    const stremioUrl = imdb ? `stremio:///detail/${stremioType}/${imdb}/${imdb}` : "";
 
     let providersHtml = "";
     const wp = d?.["watch/providers"]?.results;
@@ -2113,10 +2123,13 @@ async function openDetailsModal(item) {
       const rows = groups.map(([k, label]) => {
         const list = rp && rp[k];
         if (!list || !list.length) return "";
+        const provInner = (p) => p.logo_path
+          ? `<img class="prov-logo" src="${IMG(p.logo_path, "w92")}" alt="${escapeHtml(p.provider_name)}">`
+          : `<span class="genre-chip">${escapeHtml(p.provider_name)}</span>`;
         return `<div class="prov-group"><span class="prov-label">${label}</span>
-          ${list.map((p) => p.logo_path
-            ? `<img class="prov-logo" src="${IMG(p.logo_path, "w92")}" alt="${escapeHtml(p.provider_name)}" title="${escapeHtml(p.provider_name)}">`
-            : `<span class="genre-chip">${escapeHtml(p.provider_name)}</span>`).join("")}
+          ${list.map((p) => rp.link
+            ? `<a class="prov-a" href="${rp.link}" target="_blank" rel="noopener" title="Watch ${escapeHtml(p.provider_name)} — opens JustWatch">${provInner(p)}</a>`
+            : provInner(p)).join("")}
         </div>`;
       }).join("");
       providersHtml = `
@@ -2148,7 +2161,8 @@ async function openDetailsModal(item) {
           ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
           <div class="modal-actions">
             ${inLibrary ? `<button class="btn" id="modalGoLibrary" type="button">${item.mediaType === "tv" ? "📺 Update progress" : "✎ Open in your library"}</button>` : ""}
-            ${trailer ? `<a class="btn ${inLibrary ? "secondary" : ""}" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
+            ${stremioUrl ? `<a class="btn stremio" href="${stremioUrl}" title="Open this title in the Stremio app">▶ Open in Stremio</a>` : ""}
+            ${trailer ? `<a class="btn secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
             <a class="btn secondary" href="${tmdbUrl}" target="_blank" rel="noopener">TMDb page</a>
           </div>
         </div>
@@ -2171,7 +2185,7 @@ async function openDetailsModal(item) {
     try {
       detailCache[item.id] = await tmdbFetch(
         `/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`,
-        { append_to_response: "videos,watch/providers" });
+        { append_to_response: "videos,watch/providers,external_ids" });
       if (!overlay.classList.contains("hidden")) render(detailCache[item.id]);
       // opportunistically persist fresher genre data
       if (detailCache[item.id].genres) {
@@ -2826,6 +2840,7 @@ const CHANGELOG = [
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
     "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
+    "Open a title straight in the Stremio app from its details popup, and click a streaming logo (Netflix and friends) to jump to where to watch it.",
     "Added this “What's new” list so you can see recent updates.",
   ] },
   { id: "2026-07-23", date: "23 July 2026", items: [
