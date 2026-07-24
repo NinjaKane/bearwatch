@@ -2136,7 +2136,7 @@ async function openDetailsModal(item) {
           : `<span class="genre-chip">${escapeHtml(p.provider_name)}</span>`;
         return `<div class="prov-group"><span class="prov-label">${label}</span>
           ${list.map((p) => rp.link
-            ? `<a class="prov-a" href="${rp.link}" target="_blank" rel="noopener" title="Watch ${escapeHtml(p.provider_name)} — opens JustWatch">${provInner(p)}</a>`
+            ? `<a class="prov-a" href="${rp.link}" target="_blank" rel="noopener" title="Watch ${escapeHtml(p.provider_name)} (opens JustWatch)">${provInner(p)}</a>`
             : provInner(p)).join("")}
         </div>`;
       }).join("");
@@ -2610,7 +2610,7 @@ function updateDriveUI(mode) {
     connectBtn.classList.add("hidden");
     syncBtn.classList.remove("hidden");
     disc.classList.remove("hidden");
-    let txt = mode === "reconnect" ? " Connected — tap Sync now to refresh." : " Connected.";
+    let txt = mode === "reconnect" ? " Connected. Tap Sync now to refresh." : " Connected.";
     if (state.gdrive.lastSynced) txt += " Last synced " + relTime(state.gdrive.lastSynced) + ".";
     line.textContent = txt;
   } else {
@@ -2848,12 +2848,12 @@ const CHANGELOG = [
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
     "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
-    "Open a title straight in the Stremio app from its details popup — for a show you're part-way through it jumps to your next episode. Streaming logos (Netflix and friends) are clickable too, taking you to where to watch.",
+    "Open a title straight in the Stremio app from its details popup. For a show you're part-way through it jumps to your next episode. Streaming logos (Netflix and friends) are clickable too, taking you to where to watch.",
     "Added this “What's new” list so you can see recent updates.",
   ] },
   { id: "2026-07-23", date: "23 July 2026", items: [
     "Google Drive sync: back up your library and keep it in step across your devices (Settings → Cloud sync).",
-    "Install Bearwatch on your phone from the browser — it runs full-screen like a normal app.",
+    "Install Bearwatch on your phone from the browser, and it runs full-screen like a normal app.",
     "Fresh look, and the settings and stats now sit centred on wide screens.",
   ] },
 ];
