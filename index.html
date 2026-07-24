@@ -653,11 +653,13 @@ const LS_TV_REFRESH = "mt_lastTvRefresh";
 const LS_DISMISSED = "mt_dismissedRecs";
 const LS_LAST_MODIFIED = "mt_lastModified";
 const LS_GDRIVE = "mt_gdrive";
+const LS_TOMBSTONES = "mt_tombstones";
 
 const state = {
   items: loadJSON(LS_ITEMS, []),
   settings: Object.assign({ apiKey: "", notificationsEnabled: false }, loadJSON(LS_SETTINGS, {})),
   dismissedRecs: loadJSON(LS_DISMISSED, []),
+  tombstones: loadJSON(LS_TOMBSTONES, []),
   lastModified: +localStorage.getItem(LS_LAST_MODIFIED) || 0,
   gdrive: Object.assign({ enabled: false, fileId: null, lastSynced: 0, email: null }, loadJSON(LS_GDRIVE, {})),
   view: "library",
@@ -669,7 +671,7 @@ function loadJSON(key, fallback) {
     return raw ? JSON.parse(raw) : fallback;
   } catch { return fallback; }
 }
-function saveItems() { localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); touchData(); }
+function saveItems() { stampChanges(); localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); touchData(); }
 function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(state.settings)); }
 function saveDismissed() { localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs)); touchData(); }
 
@@ -681,6 +683,37 @@ function touchData() {
   state.lastModified = Date.now();
   localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
   if (typeof scheduleDrivePush === "function") scheduleDrivePush();
+}
+
+// Stamp each item with the moment it last changed, and record deletions as
+// "tombstones", so a cross-device merge can keep the newest edit of every item
+// and know when something was intentionally removed (rather than resurrecting it).
+function serializeForDiff(it) {
+  const c = {}; for (const k in it) if (k !== "updatedAt") c[k] = it[k];
+  return JSON.stringify(c);
+}
+let _itemShadow = new Map(state.items.map((it) => [it.id, serializeForDiff(it)]));
+function snapshotShadow() {
+  _itemShadow = new Map(state.items.map((it) => [it.id, serializeForDiff(it)]));
+}
+function addTombstone(id, at) {
+  state.tombstones = (state.tombstones || []).filter((t) => t.id !== id);
+  state.tombstones.push({ id, at });
+}
+function stampChanges() {
+  if (_applyingRemote) { snapshotShadow(); return; }
+  const now = Date.now();
+  const seen = new Set();
+  for (const it of state.items) {
+    if (!it || !it.id) continue;
+    seen.add(it.id);
+    const prev = _itemShadow.get(it.id);
+    if (prev === undefined || prev !== serializeForDiff(it)) it.updatedAt = now;
+  }
+  for (const id of _itemShadow.keys()) if (!seen.has(id)) addTombstone(id, now);
+  state.tombstones = (state.tombstones || []).filter((t) => !seen.has(t.id));
+  localStorage.setItem(LS_TOMBSTONES, JSON.stringify(state.tombstones));
+  snapshotShadow();
 }
 
 /* ================= Utilities ================= */
@@ -2252,8 +2285,8 @@ async function driveFindFileId(interactive) {
 }
 
 function currentSnapshot() {
-  return { app: "bearwatch", version: 1, lastModified: state.lastModified || 0,
-           items: state.items, dismissedRecs: state.dismissedRecs };
+  return { app: "bearwatch", version: 2, lastModified: state.lastModified || 0,
+           items: state.items, dismissedRecs: state.dismissedRecs, tombstones: state.tombstones || [] };
 }
 
 async function driveDownload(fileId, interactive) {
@@ -2285,31 +2318,41 @@ async function driveUpload(interactive) {
   return fileId;
 }
 
-// Replace local data with the cloud copy (used when the cloud is newer).
-function applyRemote(remote) {
+// Merge the cloud copy with local: union items by id, keep the newest edit of
+// each one, and honour deletions recorded as tombstones (so a removed show
+// doesn't come back from the other device). Returns the merged sets.
+function mergeLibraries(remote) {
+  const localById = new Map(state.items.map((it) => [it.id, it]));
+  const remoteById = new Map((remote.items || []).map((it) => [it.id, it]));
+  const localTomb = new Map((state.tombstones || []).map((t) => [t.id, t.at]));
+  const remoteTomb = new Map((remote.tombstones || []).map((t) => [t.id, t.at]));
+  const ids = new Set([...localById.keys(), ...remoteById.keys(), ...localTomb.keys(), ...remoteTomb.keys()]);
+  const items = [], tombstones = [];
+  for (const id of ids) {
+    const li = localById.get(id), ri = remoteById.get(id);
+    const lu = li ? (li.updatedAt || 0) : 0, ru = ri ? (ri.updatedAt || 0) : 0;
+    const delAt = Math.max(localTomb.get(id) || 0, remoteTomb.get(id) || 0);
+    if (delAt > Math.max(lu, ru)) tombstones.push({ id, at: delAt });
+    else { const winner = lu >= ru ? li : ri; if (winner) items.push(winner); }
+  }
+  const ds = new Set(state.dismissedRecs);
+  for (const id of (remote.dismissedRecs || [])) ds.add(id);
+  return { items, tombstones, dismissedRecs: [...ds] };
+}
+
+// Apply a merged result locally without it counting as a fresh user edit.
+function applyMerged(merged) {
   _applyingRemote = true;
-  state.items = Array.isArray(remote.items) ? remote.items : [];
-  state.dismissedRecs = Array.isArray(remote.dismissedRecs) ? remote.dismissedRecs : [];
-  state.lastModified = remote.lastModified || Date.now();
+  state.items = merged.items;
+  state.tombstones = merged.tombstones;
+  state.dismissedRecs = merged.dismissedRecs;
+  state.lastModified = Date.now();
   localStorage.setItem(LS_ITEMS, JSON.stringify(state.items));
+  localStorage.setItem(LS_TOMBSTONES, JSON.stringify(state.tombstones));
   localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs));
   localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
   _applyingRemote = false;
-  renderAll();
-}
-
-// On the very first link between a device and the cloud, combine both sides so
-// neither library is thrown away. Ongoing syncs use newest-wins instead.
-function mergeRemoteUnion(remote) {
-  const ids = new Set(state.items.map((it) => it && it.id));
-  for (const it of (remote.items || [])) if (it && it.id && !ids.has(it.id)) { state.items.push(it); ids.add(it.id); }
-  const ds = new Set(state.dismissedRecs);
-  for (const id of (remote.dismissedRecs || [])) ds.add(id);
-  state.dismissedRecs = [...ds];
-  state.lastModified = Date.now();
-  localStorage.setItem(LS_ITEMS, JSON.stringify(state.items));
-  localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs));
-  localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
+  snapshotShadow();
   renderAll();
 }
 
@@ -2318,13 +2361,8 @@ async function driveConnect() {
   status.className = "key-status"; status.textContent = "Connecting…";
   try {
     await getAccessToken(true);
-    const fileId = await driveFindFileId(true);
-    if (fileId) {
-      state.gdrive.fileId = fileId;
-      mergeRemoteUnion(await driveDownload(fileId, true));
-    }
+    await driveReconcile(true);
     state.gdrive.enabled = true; saveGdrive();
-    await driveUpload(true);
     updateDriveUI();
     status.className = "key-status ok";
     status.textContent = "✓ Connected. Your library is backed up and will sync automatically.";
@@ -2334,16 +2372,15 @@ async function driveConnect() {
   }
 }
 
+// Pull the cloud copy, merge it with local, and push the merged result back, so
+// both sides end up holding the union of everyone's changes.
 async function driveReconcile(interactive) {
   let fileId = state.gdrive.fileId || await driveFindFileId(interactive);
   if (!fileId) { await driveUpload(interactive); return; }
   state.gdrive.fileId = fileId;
   const remote = await driveDownload(fileId, interactive);
-  const remoteMod = (remote && remote.lastModified) || 0;
-  const localMod = state.lastModified || 0;
-  if (remoteMod > localMod) applyRemote(remote);
-  else if (localMod > remoteMod) await driveUpload(interactive);
-  else { state.gdrive.lastSynced = Date.now(); saveGdrive(); }
+  applyMerged(mergeLibraries(remote));
+  await driveUpload(interactive);
 }
 
 // Best-effort silent sync when the app opens.
@@ -2378,7 +2415,7 @@ async function drivePushNow() {
   if (!state.gdrive.enabled || !_driveDirty) return;
   if (_drivePushing) { _drivePushQueued = true; return; }
   _drivePushing = true; _driveDirty = false;
-  try { await driveUpload(false); updateDriveUI(); }
+  try { await driveReconcile(false); updateDriveUI(); }
   catch (e) { _driveDirty = true; }
   _drivePushing = false;
   if (_drivePushQueued) { _drivePushQueued = false; scheduleDrivePush(); }
