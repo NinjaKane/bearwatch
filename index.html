@@ -24,8 +24,8 @@
     --text: #f0f0f3;
     --text-dim: #9a9aa8;
     --text-faint: #62626e;
-    --accent: #e0364f;
-    --accent-hover: #f04a63;
+    --accent: #1b7476;
+    --accent-hover: #26a0a2;
     --amber: #e8a33d;
     --green: #3dc98a;
     --radius: 10px;
@@ -54,8 +54,8 @@
     border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
   }
-  .logo { font-size: 20px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; }
-  .logo .play { color: var(--accent); }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; display: inline-flex; align-items: center; gap: 9px; }
+  .logo-mark { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; }
   .search-wrap { position: relative; flex: 1 1 260px; max-width: 520px; }
   #searchInput {
     width: 100%; padding: 10px 14px 10px 38px;
@@ -75,7 +75,7 @@
     padding: 8px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.04);
   }
   .search-result:last-child { border-bottom: none; }
-  .search-result:hover, .search-result.active { background: rgba(224,54,79,.13); }
+  .search-result:hover, .search-result.active { background: rgba(27,116,118,.13); }
   .search-result img, .search-result .thumb-ph {
     width: 40px; height: 60px; border-radius: 4px; object-fit: cover; flex-shrink: 0;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 18px;
@@ -98,7 +98,7 @@
     position: relative; transition: color .15s, background .15s;
   }
   .tab:hover { color: var(--text); background: rgba(255,255,255,.05); }
-  .tab.active { color: var(--text); background: rgba(224,54,79,.16); }
+  .tab.active { color: var(--text); background: rgba(27,116,118,.16); }
   .tab .badge {
     position: absolute; top: 2px; right: 2px;
     background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
@@ -119,7 +119,7 @@
   h2.section-title .dot { width: 8px; height: 8px; border-radius: 50%; }
 
   /* ---------- Library toolbar & stats ---------- */
-  .lib-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .lib-toolbar { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
   .pills {
     display: flex; gap: 4px; background: var(--bg-card);
     border: 1px solid var(--border); border-radius: 999px; padding: 4px;
@@ -132,7 +132,7 @@
   .pill:hover { color: var(--text); }
   .pill.active { background: var(--accent); color: #fff; }
   #libFilter {
-    flex: 1; min-width: 160px; max-width: 280px;
+    flex: 0 1 240px; min-width: 160px; max-width: 280px;
     background: var(--bg-input); border: 1px solid var(--border);
     border-radius: 999px; padding: 8px 14px; outline: none; font-size: 13px;
   }
@@ -240,8 +240,8 @@
 
   /* ---------- Banner ---------- */
   .banner {
-    background: linear-gradient(90deg, rgba(224,54,79,.18), rgba(224,54,79,.06));
-    border: 1px solid rgba(224,54,79,.4);
+    background: linear-gradient(90deg, rgba(27,116,118,.18), rgba(27,116,118,.06));
+    border: 1px solid rgba(27,116,118,.4);
     border-radius: var(--radius); padding: 12px 16px; margin-bottom: 22px;
     font-size: 14px; line-height: 1.55;
   }
@@ -402,7 +402,7 @@
     margin-left: auto; flex-shrink: 0; padding: 4px 12px; border-radius: 999px;
     font-size: 12px; font-weight: 700; white-space: nowrap;
   }
-  .chip.today { background: rgba(224,54,79,.2); color: var(--accent-hover); border: 1px solid rgba(224,54,79,.5); }
+  .chip.today { background: rgba(27,116,118,.2); color: var(--accent-hover); border: 1px solid rgba(27,116,118,.5); }
   .chip.week { background: rgba(232,163,61,.16); color: var(--amber); border: 1px solid rgba(232,163,61,.45); }
   .chip.later { background: rgba(255,255,255,.06); color: var(--text-dim); border: 1px solid var(--border); }
 
@@ -466,7 +466,7 @@
   /* ---------- Wrapped ---------- */
   .wrapped-card {
     background:
-      radial-gradient(circle at 20% 10%, rgba(224,54,79,.35), transparent 45%),
+      radial-gradient(circle at 20% 10%, rgba(27,116,118,.35), transparent 45%),
       radial-gradient(circle at 85% 85%, rgba(154,92,224,.3), transparent 50%),
       linear-gradient(150deg, #191022, #0d0d10 70%);
     padding: 38px 34px; text-align: center;
@@ -498,7 +498,7 @@
 <body>
 
 <header class="navbar">
-  <div class="logo"><span class="play">🐻‍❄️</span> Bearwatch</div>
+  <div class="logo"><img class="logo-mark" src="logo-mark.png" alt=""> Bearwatch</div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input id="searchInput" type="text" placeholder="Search movies &amp; TV shows…" autocomplete="off" spellcheck="false">
