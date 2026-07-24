@@ -90,6 +90,10 @@
   .recs-actions .btn-mini { flex: 0 0 auto; }
   .search-result:last-child { border-bottom: none; }
   .search-result:hover, .search-result.active { background: rgba(27,116,118,.13); }
+  /* A row already in the library is clickable and jumps to that title */
+  .search-result.tracked { cursor: pointer; }
+  .search-result.tracked .sr-open { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+  .search-result.tracked:hover .sr-open { color: var(--accent-hover); }
   .search-result img, .search-result .thumb-ph {
     width: 40px; height: 60px; border-radius: 4px; object-fit: cover; flex-shrink: 0;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 18px;
@@ -120,6 +124,20 @@
     display: flex; align-items: center; justify-content: center; padding: 0 4px;
   }
   .tab .badge:empty { display: none; }
+  /* Small "there's an update" dot on the Settings tab */
+  .tab-dot { position: absolute; top: 6px; right: 8px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--amber); display: none; }
+  .tab-dot.on { display: block; }
+  /* What's new / changelog list in Settings */
+  .changelog { margin-top: 4px; }
+  .changelog summary { cursor: pointer; font-weight: 600; color: var(--text); list-style: none; }
+  .changelog summary::-webkit-details-marker { display: none; }
+  .changelog summary::before { content: "▸ "; color: var(--text-faint); }
+  .changelog[open] summary::before { content: "▾ "; }
+  .cl-entry { margin: 14px 0 0; }
+  .cl-date { font-size: 12px; font-weight: 700; color: var(--accent-hover); letter-spacing: .3px; }
+  .cl-entry ul { margin: 6px 0 0; padding-left: 18px; }
+  .cl-entry li { font-size: 13px; color: var(--text-dim); margin: 3px 0; }
 
   /* ---------- Layout ---------- */
   main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 26px 22px 60px; }
@@ -522,7 +540,7 @@
     <button class="tab active" data-view="library">Library</button>
     <button class="tab" data-view="calendar">Calendar<span class="badge" id="calBadge"></span></button>
     <button class="tab" data-view="stats">📊 Stats</button>
-    <button class="tab" data-view="settings" title="Settings">⚙️</button>
+    <button class="tab" data-view="settings" title="Settings">⚙️<span class="tab-dot" id="settingsDot"></span></button>
   </nav>
 </header>
 
@@ -641,6 +659,15 @@
         </div>
         <div class="key-status" id="backupStatus"></div>
       </div>
+
+      <div class="settings-block">
+        <h3>What's new</h3>
+        <p class="hint">A running list of recent updates to Bearwatch.</p>
+        <details class="changelog" id="changelog" open>
+          <summary>Recent changes</summary>
+          <div id="changelogList"></div>
+        </details>
+      </div>
     </div>
   </section>
 </main>
@@ -676,7 +703,18 @@ const state = {
   lastModified: +localStorage.getItem(LS_LAST_MODIFIED) || 0,
   gdrive: Object.assign({ enabled: false, fileId: null, lastSynced: 0, email: null }, loadJSON(LS_GDRIVE, {})),
   view: "library",
+  recs: [],
+  recsCursor: 0,
 };
+
+// Fisher–Yates shuffle (returns the same array, shuffled in place).
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 function loadJSON(key, fallback) {
   try {
@@ -814,7 +852,7 @@ searchInput.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1); }
   else if (e.key === "Enter") {
     e.preventDefault();
-    if (activeIndex >= 0 && searchResults[activeIndex]) selectResult(searchResults[activeIndex]);
+    if (activeIndex >= 0 && searchResults[activeIndex]) openSearchResult(searchResults[activeIndex]);
   }
   else if (e.key === "Escape") closeDropdown();
 });
@@ -858,17 +896,18 @@ function renderDropdown() {
     const title = r.media_type === "movie" ? r.title : r.name;
     const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
     const thumb = IMG(r.poster_path, "w92");
-    const tracked = state.items.some((it) => it.id === r.media_type + "-" + r.id);
+    const tracked = state.items.find((it) => it.id === r.media_type + "-" + r.id);
     return `
-      <div class="search-result" data-i="${i}">
+      <div class="search-result ${tracked ? "tracked" : ""}" data-i="${i}">
         ${thumb ? `<img src="${thumb}" alt="">` : `<div class="thumb-ph">🎬</div>`}
         <div class="sr-main">
           <div class="sr-title">${escapeHtml(title)}</div>
           <div class="sr-meta">
             <span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span>
             <span>${yearOf(date)}</span>
+            ${tracked ? `<span class="sr-added">✓ In ${statusLabel(tracked.status)}</span>` : ""}
           </div>
-          ${tracked ? '<span class="sr-added">✓ In library</span>' : `
+          ${tracked ? '<div class="sr-open">Click to open →</div>' : `
           <div class="add-picker">
             <button class="add-btn" type="button" data-i="${i}" data-status="watching">▶ Watching</button>
             <button class="add-btn" type="button" data-i="${i}" data-status="watchlist">＋ Watchlist</button>
@@ -884,6 +923,23 @@ function renderDropdown() {
       selectResult(searchResults[+btn.dataset.i], btn.dataset.status);
     });
   });
+  // Clicking a row that's already in the library jumps to that title's details.
+  dropdown.querySelectorAll(".search-result.tracked").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openSearchResult(searchResults[+row.dataset.i]);
+    });
+  });
+}
+
+// From a search hit, open the matching library item's details (if tracked),
+// otherwise fall back to adding it to the watchlist.
+function openSearchResult(r) {
+  const existing = state.items.find((it) => it.id === r.media_type + "-" + r.id);
+  closeDropdown();
+  searchInput.value = "";
+  if (existing) openDetailsModal(existing);
+  else selectResult(r);
 }
 
 function moveActive(delta) {
@@ -2095,26 +2151,31 @@ async function loadRecommendations(force = false) {
   }
   if (state.recs && state.recs.length && !force) { renderRecs(); return; }
   // Seed from your highest-rated titles; fall back to what you've watched most recently.
-  let seeds = state.items.filter((it) => it.rating >= 7).sort((a, b) => b.rating - a.rating);
-  if (!seeds.length) {
-    seeds = state.items.filter((it) => it.status !== "watchlist")
-      .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
-  }
+  let seeds = state.items.filter((it) => it.rating >= 7);
+  if (!seeds.length) seeds = state.items.filter((it) => it.status !== "watchlist");
+  if (!seeds.length) seeds = state.items.slice();
+  // Shuffle the seeds so pressing Refresh draws on a different mix of your
+  // library each time, giving a genuinely fresh row rather than the same list.
+  seeds = shuffle(seeds.slice()).slice(0, 6);
   const seen = new Map();
-  for (const s of seeds.slice(0, 3)) {
-    try {
-      const data = await tmdbFetch(`/${s.mediaType === "movie" ? "movie" : "tv"}/${s.tmdbId}/recommendations`);
-      for (const r of (data.results || []).slice(0, 10)) {
-        r.media_type = r.media_type || (r.title ? "movie" : "tv");
-        if (r.media_type !== "movie" && r.media_type !== "tv") continue;
-        const id = r.media_type + "-" + r.id;
-        if (state.items.some((x) => x.id === id) || seen.has(id) || state.dismissedRecs.includes(id)) continue;
-        seen.set(id, r);
-      }
-    } catch { /* seed failed, try next */ }
+  for (const s of seeds) {
+    for (const endpoint of ["recommendations", "similar"]) {
+      try {
+        const data = await tmdbFetch(`/${s.mediaType === "movie" ? "movie" : "tv"}/${s.tmdbId}/${endpoint}`);
+        for (const r of (data.results || [])) {
+          r.media_type = r.media_type || (r.title ? "movie" : "tv");
+          if (r.media_type !== "movie" && r.media_type !== "tv") continue;
+          const id = r.media_type + "-" + r.id;
+          if (state.items.some((x) => x.id === id) || seen.has(id) || state.dismissedRecs.includes(id)) continue;
+          seen.set(id, r);
+        }
+      } catch { /* seed/endpoint failed, try next */ }
+    }
   }
-  // Keep a deeper pool so dismissing a card can be refilled without a new fetch.
-  state.recs = [...seen.values()].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40);
+  // Keep a deep, shuffled pool so Refresh can page through fresh suggestions
+  // (and dismissing a card can be refilled) without a new fetch each time.
+  state.recs = shuffle([...seen.values()]).slice(0, 60);
+  state.recsCursor = 0;
   renderRecs();
 }
 
@@ -2131,13 +2192,20 @@ function recToItem(r) {
   };
 }
 
-function renderRecs() {
-  const el = $("#recsSection");
-  const recs = (state.recs || []).filter((r) => {
+const RECS_WINDOW = 12;
+function availableRecs() {
+  return (state.recs || []).filter((r) => {
     const id = r.media_type + "-" + r.id;
     return !state.items.some((x) => x.id === id) && !state.dismissedRecs.includes(id);
-  }).slice(0, 12);
-  if (!recs.length) { el.innerHTML = ""; return; }
+  });
+}
+function renderRecs() {
+  const el = $("#recsSection");
+  const available = availableRecs();
+  if (!available.length) { el.innerHTML = ""; return; }
+  // Show a rolling window into the pool; Refresh advances the cursor.
+  if (state.recsCursor >= available.length) state.recsCursor = 0;
+  const recs = available.slice(state.recsCursor, state.recsCursor + RECS_WINDOW);
   const closed = !!(state.settings.collapsedSections || {}).recs;
   el.innerHTML = `
     <h2 class="section-title sec-toggle" data-sec="recs" title="Click to ${closed ? "expand" : "collapse"}">
@@ -2169,8 +2237,15 @@ function renderRecs() {
   const refresh = el.querySelector("#recsRefresh");
   if (refresh) refresh.addEventListener("click", (e) => {
     e.stopPropagation();   // don't collapse the section
-    refresh.disabled = true;
-    loadRecommendations(true);
+    // Page forward through the pool; when we run past the end, fetch a fresh,
+    // reshuffled batch so Refresh always shows a genuinely new row.
+    state.recsCursor = (state.recsCursor || 0) + RECS_WINDOW;
+    if (state.recsCursor >= availableRecs().length) {
+      refresh.disabled = true;
+      loadRecommendations(true);
+    } else {
+      renderRecs();
+    }
   });
   el.querySelectorAll(".rec-card").forEach((card) => {
     const rec = recs.find((r) => r.media_type + "-" + r.id === card.dataset.id);
@@ -2699,9 +2774,49 @@ function switchView(view) {
   ["library", "calendar", "stats", "settings"].forEach((v) =>
     $("#view-" + v).classList.toggle("hidden", v !== view));
   if (view === "stats") renderStatsView();
+  if (view === "settings") markChangelogSeen();
 }
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => switchView(t.dataset.view)));
+
+/* ================= What's new / changelog ================= */
+// Newest first. The top entry's `id` is what we compare against to decide
+// whether to show the "new update" dot on the Settings tab.
+const CHANGELOG = [
+  { id: "2026-07-24", date: "24 July 2026", items: [
+    "Search now lets you add a title straight to Watching, Watchlist or Watched — and clicking a title you already have jumps to it.",
+    "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
+    "Added this “What's new” list so you can see recent updates.",
+  ] },
+  { id: "2026-07-23", date: "23 July 2026", items: [
+    "Google Drive sync: back up your library and keep it in step across your devices (Settings → Cloud sync).",
+    "Install Bearwatch on your phone from the browser — it runs full-screen like a normal app.",
+    "Fresh look, and the settings and stats now sit centred on wide screens.",
+  ] },
+];
+const LS_CHANGELOG_SEEN = "mt_changelogSeen";
+
+function renderChangelog() {
+  const list = $("#changelogList");
+  if (!list) return;
+  list.innerHTML = CHANGELOG.map((e) => `
+    <div class="cl-entry">
+      <div class="cl-date">${escapeHtml(e.date)}</div>
+      <ul>${e.items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+    </div>`).join("");
+}
+function updateSettingsDot() {
+  const dot = $("#settingsDot");
+  if (!dot) return;
+  const latest = CHANGELOG.length ? CHANGELOG[0].id : "";
+  const seen = localStorage.getItem(LS_CHANGELOG_SEEN);
+  // Don't nag a brand-new user who has no library yet.
+  dot.classList.toggle("on", latest && seen !== latest && state.items.length > 0);
+}
+function markChangelogSeen() {
+  if (CHANGELOG.length) localStorage.setItem(LS_CHANGELOG_SEEN, CHANGELOG[0].id);
+  updateSettingsDot();
+}
 
 /* ---- Library filter toolbar (type/sort/genre persist across sessions) ---- */
 function saveLibPrefs() {
@@ -2767,6 +2882,8 @@ if (navigator.storage && navigator.storage.persist) {
 }
 
 renderAll();
+renderChangelog();
+updateSettingsDot();
 checkReminders();
 (async () => {
   if (state.gdrive.enabled) { try { await driveAutoSync(); } catch (e) {} }
