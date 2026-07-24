@@ -29,6 +29,10 @@ The one thing you'll need is a free TMDb API key, which is what lets the app loo
 
 The app runs you through these same steps the first time you open it, so you don't really need to keep this page around.
 
+## Put it on your phone
+
+It installs like an app without going anywhere near an app store. On Android, open the live link in Chrome, tap the menu, and pick "Add to Home screen" (or "Install app" if it offers that). On an iPhone, open it in Safari, tap Share, then "Add to Home Screen". Either way you get the Bearwatch icon on your home screen and it opens fullscreen, just like a normal app. Your data still lives on that one device.
+
 ## Running it offline
 
 If you'd rather not use the hosted version, grab `index.html` and just double-click it. It opens in your browser and works exactly the same. The one catch: run as a local file, the browser ties your saved data to that file's exact spot, so try not to move or rename it once you've started adding things. Export a backup from Settings now and then just to be safe.
