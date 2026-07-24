@@ -659,7 +659,7 @@ const state = {
   settings: Object.assign({ apiKey: "", notificationsEnabled: false }, loadJSON(LS_SETTINGS, {})),
   dismissedRecs: loadJSON(LS_DISMISSED, []),
   lastModified: +localStorage.getItem(LS_LAST_MODIFIED) || 0,
-  gdrive: Object.assign({ enabled: false, fileId: null, lastSynced: 0 }, loadJSON(LS_GDRIVE, {})),
+  gdrive: Object.assign({ enabled: false, fileId: null, lastSynced: 0, email: null }, loadJSON(LS_GDRIVE, {})),
   view: "library",
 };
 
@@ -2146,7 +2146,7 @@ function exportBackup() {
 
 /* ================= Google Drive sync ================= */
 const GOOGLE_CLIENT_ID = "1039935472518-qv88egnpiuhroepsrlicvat61cg55cn3.apps.googleusercontent.com";
-const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const GDRIVE_SCOPE = "email https://www.googleapis.com/auth/drive.file";
 const GDRIVE_FILENAME = "bearwatch-library.json";
 
 let _tokenClient = null, _accessToken = null, _tokenExpiry = 0;
@@ -2204,13 +2204,33 @@ function ensureTokenClient() {
 
 async function getAccessToken(interactive) {
   if (_accessToken && Date.now() < _tokenExpiry) return _accessToken;
+  const email = state.gdrive.email;
+  // Without a known account we can't refresh silently, so don't pop the
+  // account chooser on a background sync — just bail and let the user reconnect.
+  if (!interactive && !email) throw new Error("needs-reconnect");
   await loadGis();
   ensureTokenClient();
-  return new Promise((resolve, reject) => {
+  const token = await new Promise((resolve, reject) => {
     _tokenResolve = resolve; _tokenReject = reject;
-    try { _tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" }); }
+    const cfg = {};
+    if (email) cfg.hint = email;               // lock to the account already chosen
+    cfg.prompt = (interactive && !email) ? "consent" : "";   // only ask the very first time
+    try { _tokenClient.requestAccessToken(cfg); }
     catch (e) { _tokenResolve = _tokenReject = null; reject(e); }
   });
+  if (!state.gdrive.email) await fetchAndStoreEmail();  // remember the account for silent refreshes
+  return token;
+}
+
+// After connecting, learn which account was picked so future syncs are silent.
+async function fetchAndStoreEmail() {
+  try {
+    const res = await driveFetch("https://www.googleapis.com/oauth2/v3/userinfo", {}, false);
+    if (res.ok) {
+      const d = await res.json();
+      if (d.email) { state.gdrive.email = d.email; saveGdrive(); }
+    }
+  } catch (e) {}
 }
 
 async function driveFetch(url, opts, interactive) {
@@ -2369,7 +2389,7 @@ function driveDisconnect() {
     try { google.accounts.oauth2.revoke(_accessToken); } catch (e) {}
   }
   _accessToken = null; _tokenExpiry = 0;
-  state.gdrive = { enabled: false, fileId: null, lastSynced: 0 };
+  state.gdrive = { enabled: false, fileId: null, lastSynced: 0, email: null };
   saveGdrive();
   updateDriveUI();
   const status = $("#driveStatus");
