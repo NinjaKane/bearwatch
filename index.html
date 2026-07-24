@@ -73,7 +73,7 @@
   }
   .search-result {
     display: flex; gap: 12px; align-items: flex-start;
-    padding: 10px 12px; cursor: default; border-bottom: 1px solid rgba(255,255,255,.04);
+    padding: 10px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.04);
   }
   .search-result .sr-main { flex: 1; min-width: 0; }
   /* Add-to-status picker, shared by search results and recommendations */
@@ -138,6 +138,13 @@
   .cl-date { font-size: 12px; font-weight: 700; color: var(--accent-hover); letter-spacing: .3px; }
   .cl-entry ul { margin: 6px 0 0; padding-left: 18px; }
   .cl-entry li { font-size: 13px; color: var(--text-dim); margin: 3px 0; }
+  /* Briefly highlight a library card when you jump to it from search/details */
+  @keyframes cardFlash {
+    0%   { box-shadow: 0 0 0 0 rgba(43,176,179,0); }
+    12%  { box-shadow: 0 0 0 3px var(--accent-hover); }
+    100% { box-shadow: 0 0 0 0 rgba(43,176,179,0); }
+  }
+  .card.flash { animation: cardFlash 1.6s ease-out; }
 
   /* ---------- Layout ---------- */
   main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 26px 22px 60px; }
@@ -923,23 +930,24 @@ function renderDropdown() {
       selectResult(searchResults[+btn.dataset.i], btn.dataset.status);
     });
   });
-  // Clicking a row that's already in the library jumps to that title's details.
-  dropdown.querySelectorAll(".search-result.tracked").forEach((row) => {
+  // Clicking a row (anywhere but the add buttons) opens the details popup.
+  // For a title already in the library it's the same rich view, plus a button
+  // through to its card so you can update where you're up to.
+  dropdown.querySelectorAll(".search-result").forEach((row) => {
     row.addEventListener("click", (e) => {
-      e.stopPropagation();
+      if (e.target.closest(".add-btn")) return;
       openSearchResult(searchResults[+row.dataset.i]);
     });
   });
 }
 
-// From a search hit, open the matching library item's details (if tracked),
-// otherwise fall back to adding it to the watchlist.
+// Open the details popup for a search hit: the real library item if we already
+// have it (so its "Update progress" button shows), otherwise a lightweight view.
 function openSearchResult(r) {
   const existing = state.items.find((it) => it.id === r.media_type + "-" + r.id);
   closeDropdown();
   searchInput.value = "";
-  if (existing) openDetailsModal(existing);
-  else selectResult(r);
+  openDetailsModal(existing || recToItem(r));
 }
 
 function moveActive(delta) {
@@ -2045,6 +2053,32 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#modalOverlay").classList.contains("hidden")) closeModal();
 });
 
+// Jump from the details popup (or search) to the item's card in the library,
+// where the +1 Ep / season picker / status / rating controls live. Clears any
+// filter or collapsed section that might otherwise hide the card.
+function goToLibraryItem(id) {
+  const it = state.items.find((x) => x.id === id);
+  if (!it) return;
+  closeModal();
+  state.libType = "all"; state.libGenre = ""; state.libQuery = "";
+  const lf = $("#libFilter"); if (lf) lf.value = "";
+  const gf = $("#genreFilter"); if (gf) gf.value = "";
+  document.querySelectorAll(".pill").forEach((p) => p.classList.toggle("active", p.dataset.type === "all"));
+  const c = state.settings.collapsedSections || (state.settings.collapsedSections = {});
+  if (c[it.status]) c[it.status] = false;
+  saveLibPrefs();
+  switchView("library");
+  renderLibrary();
+  requestAnimationFrame(() => {
+    const sel = window.CSS && CSS.escape ? CSS.escape(id) : id;
+    const card = document.querySelector('.card[data-id="' + sel + '"]');
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1700);
+  });
+}
+
 async function openDetailsModal(item) {
   const overlay = $("#modalOverlay");
   const body = $("#modalBody");
@@ -2064,6 +2098,7 @@ async function openDetailsModal(item) {
       : "";
     const overview = d?.overview || item.overview || "No synopsis available.";
     const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`;
+    const inLibrary = state.items.some((x) => x.id === item.id);
 
     let providersHtml = "";
     const wp = d?.["watch/providers"]?.results;
@@ -2110,7 +2145,8 @@ async function openDetailsModal(item) {
           </div>
           ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
           <div class="modal-actions">
-            ${trailer ? `<a class="btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
+            ${inLibrary ? `<button class="btn" id="modalGoLibrary" type="button">${item.mediaType === "tv" ? "📺 Update progress" : "✎ Open in your library"}</button>` : ""}
+            ${trailer ? `<a class="btn ${inLibrary ? "secondary" : ""}" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
             <a class="btn secondary" href="${tmdbUrl}" target="_blank" rel="noopener">TMDb page</a>
           </div>
         </div>
@@ -2118,6 +2154,8 @@ async function openDetailsModal(item) {
       <p class="modal-overview">${escapeHtml(overview)}</p>
       ${providersHtml}`;
     body.querySelector(".modal-close").addEventListener("click", closeModal);
+    const goLib = body.querySelector("#modalGoLibrary");
+    if (goLib) goLib.addEventListener("click", () => goToLibraryItem(item.id));
     const provSel = body.querySelector("#provRegion");
     if (provSel) provSel.addEventListener("change", () => {
       state.settings.region = provSel.value;
@@ -2784,7 +2822,7 @@ document.querySelectorAll(".tab").forEach((t) =>
 // whether to show the "new update" dot on the Settings tab.
 const CHANGELOG = [
   { id: "2026-07-24", date: "24 July 2026", items: [
-    "Search now lets you add a title straight to Watching, Watchlist or Watched — and clicking a title you already have jumps to it.",
+    "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
     "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
     "Added this “What's new” list so you can see recent updates.",
   ] },
