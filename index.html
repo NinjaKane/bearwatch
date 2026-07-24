@@ -6,7 +6,7 @@
 <title>Bearwatch</title>
 <meta name="description" content="A little movie and TV tracker that runs entirely in your browser.">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#12263f">
+<meta name="theme-color" content="#0d1314">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -26,6 +26,8 @@
     --text-faint: #647a7c;
     --accent: #1b7476;
     --accent-hover: #2bb0b3;
+    --accent-text: #e8f5f5;   /* pale ice mint, for text on the teal accent */
+    --link: #4ecdc4;          /* vibrant teal for links on dark surfaces (WCAG) */
     --amber: #f4b740;
     --green: #3dc98a;
     --danger: #ff7865;
@@ -48,12 +50,21 @@
   /* ---------- Navbar ---------- */
   .navbar {
     position: sticky; top: 0; z-index: 50;
-    display: flex; align-items: center; gap: 18px;
-    padding: 12px 22px;
     background: rgba(13,13,16,.92);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
+  }
+  /* Keep the navbar content aligned to the same width/edges as the card grid below */
+  .nav-inner {
+    max-width: 1280px; margin: 0 auto; width: 100%;
+    display: flex; align-items: center; gap: 18px;
+    padding: 12px 22px; flex-wrap: wrap;
+  }
+  /* Mobile-only magnifier that expands the search field; hidden on desktop */
+  .search-toggle {
+    display: none; background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text-dim); width: 40px; height: 40px; border-radius: 999px; font-size: 16px;
+    align-items: center; justify-content: center; flex-shrink: 0;
   }
   .logo { font-size: 20px; font-weight: 800; letter-spacing: .5px; white-space: nowrap; display: inline-flex; align-items: center; gap: 9px; }
   .logo-mark { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; }
@@ -106,7 +117,7 @@
     font-size: 10.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
   }
   .type-badge.movie { background: rgba(61,140,201,.22); color: #6fb3e0; }
-  .type-badge.tv { background: rgba(154,92,224,.22); color: #b98ae8; }
+  .type-badge.tv { background: #1b4d4e; color: #a8e6cf; }
 
   .tabs { display: flex; gap: 6px; margin-left: auto; }
   .tab {
@@ -118,7 +129,7 @@
   .tab.active { color: var(--text); background: rgba(27,116,118,.16); }
   .tab .badge {
     position: absolute; top: 2px; right: 2px;
-    background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+    background: var(--amber); color: #0d1314; font-size: 10px; font-weight: 700;
     min-width: 17px; height: 17px; border-radius: 999px;
     display: flex; align-items: center; justify-content: center; padding: 0 4px;
   }
@@ -168,7 +179,7 @@
     transition: color .15s, background .15s;
   }
   .pill:hover { color: var(--text); }
-  .pill.active { background: var(--accent); color: #fff; }
+  .pill.active { background: var(--accent); color: var(--accent-text); }
   #libFilter {
     flex: 0 1 240px; min-width: 160px; max-width: 280px;
     background: var(--bg-input); border: 1px solid var(--border);
@@ -288,7 +299,8 @@
     border-radius: var(--radius); padding: 12px 16px; margin-bottom: 22px;
     font-size: 14px; line-height: 1.55;
   }
-  .banner b { color: var(--accent-hover); }
+  .banner b { color: var(--link); }
+  .banner a { color: var(--link); font-weight: 600; }
 
   /* ---------- Library cards ---------- */
   .grid {
@@ -297,18 +309,42 @@
   }
   .card {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius); overflow: hidden;
+    border-radius: 12px; overflow: hidden;
     display: flex; flex-direction: column;
     transition: transform .18s, box-shadow .18s, border-color .18s;
   }
   .card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: #3a3a48; }
   .poster-wrap { position: relative; aspect-ratio: 2 / 3; background: var(--bg-input); cursor: pointer; }
   .poster-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Soft gradient so the poster fades down into the card surface */
+  .poster-wrap::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(to top, var(--bg-card) 0%, rgba(20,29,32,0) 40%);
+  }
   .poster-ph {
     width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
     font-size: 42px; color: var(--text-faint);
   }
-  .poster-wrap .type-badge { position: absolute; top: 8px; left: 8px; }
+  .poster-wrap .type-badge { position: absolute; top: 8px; left: 8px; z-index: 2; }
+  /* Compact rating shown by default in place of the full star row */
+  .score-pill {
+    display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+    background: rgba(244,183,64,.14); color: var(--amber);
+    border: 1px solid rgba(244,183,64,.3); border-radius: 999px;
+    padding: 3px 10px; font-size: 12px; font-weight: 700;
+  }
+  .score-pill.unrated { background: rgba(255,255,255,.05); color: var(--text-faint); border-color: var(--border); }
+  .card-topline { display: flex; align-items: center; gap: 8px; }
+  .card-topline .status-select { flex: 1; min-width: 0; }
+  /* Secondary controls; revealed on hover on desktop, always shown on touch */
+  .card-extra { display: flex; flex-direction: column; gap: 9px; }
+  @media (hover: hover) and (pointer: fine) {
+    .card-extra {
+      max-height: 0; opacity: 0; overflow: hidden;
+      transition: max-height .28s ease, opacity .18s ease;
+    }
+    .card:hover .card-extra, .card:focus-within .card-extra { max-height: 520px; opacity: 1; }
+  }
   .card-body { padding: 12px 12px 14px; display: flex; flex-direction: column; gap: 9px; flex: 1; }
   .card-title {
     font-size: 14.5px; font-weight: 700; line-height: 1.3;
@@ -465,7 +501,7 @@
   }
   .key-row input:focus { border-color: var(--accent); }
   .btn {
-    background: var(--accent); color: #fff; border: none;
+    background: var(--accent); color: var(--accent-text); border: none;
     border-radius: 8px; padding: 9px 18px; font-weight: 700; font-size: 14px;
     transition: background .15s;
   }
@@ -536,23 +572,67 @@
 
   footer { text-align: center; padding: 18px; font-size: 11.5px; color: var(--text-faint); border-top: 1px solid var(--border); }
   footer a { color: var(--text-dim); }
+
+  /* The stats toggle is a mobile-only affordance; hidden on desktop */
+  .stats-toggle { display: none; }
+
+  /* ---------- Mobile / PWA layout ---------- */
+  @media (max-width: 640px) {
+    .nav-inner { gap: 10px; padding: 10px 14px; }
+    .logo { font-size: 18px; }
+    /* Collapsible search: a magnifier that expands the field onto its own row */
+    .search-toggle { display: inline-flex; margin-left: auto; }
+    .search-wrap { display: none; max-width: none; }
+    body.search-open .search-wrap { display: block; flex-basis: 100%; order: 5; }
+    .tabs { margin-left: 0; }
+
+    main { padding: 16px 14px 48px; }
+
+    /* One horizontal scrolling filter row: type pills + genre + sort */
+    .lib-toolbar { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
+      gap: 8px; -webkit-overflow-scrolling: touch; padding-bottom: 4px; margin-bottom: 12px; }
+    .lib-toolbar::-webkit-scrollbar { display: none; }
+    .lib-toolbar .pills, .lib-toolbar #genreFilter, .lib-toolbar #libSort { flex: 0 0 auto; }
+    #libFilter { display: none; }
+
+    /* Four stat pills tucked behind a single toggle */
+    .stats-toggle:not([hidden]) {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
+      border-radius: 999px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px;
+    }
+    .stats-bar { display: none; }
+    .stats-bar.open { display: flex; }
+
+    /* Horizontal list cards: poster thumbnail on the left, details on the right */
+    .grid { grid-template-columns: 1fr; gap: 12px; }
+    .card { flex-direction: row; }
+    .card:hover { transform: none; box-shadow: none; }
+    .poster-wrap { width: 104px; flex-shrink: 0; align-self: flex-start; }
+    .poster-wrap::after { display: none; }
+    .card-body { flex: 1; min-width: 0; }
+    .card-title, .card-sub { min-height: 0; }
+  }
 </style>
 </head>
 <body>
 
 <header class="navbar">
-  <div class="logo"><img class="logo-mark" src="logo-mark.png" alt=""> Bearwatch</div>
-  <div class="search-wrap">
-    <span class="search-icon">🔍</span>
-    <input id="searchInput" type="text" placeholder="Search movies &amp; TV shows…" autocomplete="off" spellcheck="false">
-    <div id="searchDropdown" class="search-dropdown hidden"></div>
+  <div class="nav-inner">
+    <div class="logo"><img class="logo-mark" src="logo-mark.png" alt=""> Bearwatch</div>
+    <button class="search-toggle" id="searchToggle" type="button" aria-label="Search" title="Search">🔍</button>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input id="searchInput" type="text" placeholder="Search movies &amp; TV shows…" autocomplete="off" spellcheck="false">
+      <div id="searchDropdown" class="search-dropdown hidden"></div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="library">Library</button>
+      <button class="tab" data-view="calendar">Calendar<span class="badge" id="calBadge"></span></button>
+      <button class="tab" data-view="stats">📊 Stats</button>
+      <button class="tab" data-view="settings" title="Settings">⚙️<span class="tab-dot" id="settingsDot"></span></button>
+    </nav>
   </div>
-  <nav class="tabs">
-    <button class="tab active" data-view="library">Library</button>
-    <button class="tab" data-view="calendar">Calendar<span class="badge" id="calBadge"></span></button>
-    <button class="tab" data-view="stats">📊 Stats</button>
-    <button class="tab" data-view="settings" title="Settings">⚙️<span class="tab-dot" id="settingsDot"></span></button>
-  </nav>
 </header>
 
 <main>
@@ -574,6 +654,7 @@
       </select>
     </div>
     <div id="backupNudge"></div>
+    <button class="stats-toggle" id="statsToggle" type="button" aria-expanded="false">📊 Show stats ▾</button>
     <div class="stats-bar" id="statsBar"></div>
     <div id="recsSection"></div>
     <div id="libraryContent"></div>
@@ -1161,6 +1242,7 @@ const LIB_SORTERS = {
 function renderLibrary() {
   const root = $("#libraryContent");
   $("#libToolbar").hidden = !state.items.length;
+  $("#statsToggle").hidden = !state.items.length;
   if (!state.items.length) {
     $("#statsBar").innerHTML = "";
     const hasKey = !!(state.settings.apiKey || "").trim();
@@ -1263,8 +1345,13 @@ function cardHtml(item) {
     const v = i + 1;
     return `<span data-v="${v}" class="${item.rating >= v ? "filled" : ""}" title="${v}/10">★</span>`;
   }).join("");
+  // Compact rating pill shown by default; the full star row lives in the hover controls.
+  const rated = item.rating != null;
+  const scorePill = `<span class="score-pill ${rated ? "" : "unrated"}" title="${rated ? "Your rating" : "Not rated yet"}">★ ${rated ? item.rating + "/10" : "Rate"}</span>`;
 
-  let progHtml = "";
+  // Progress bar (always visible) is separated from the +1 Ep / Set controls
+  // (moved into the hover-revealed .card-extra) so the default card stays clean.
+  let progHtml = "", progActionsHtml = "";
   if (item.mediaType === "tv") {
     const total = item.totalEpisodes ||
       (item.seasons ? item.seasons.reduce((a, s) => a + s.count, 0) : 0);
@@ -1280,12 +1367,13 @@ function cardHtml(item) {
         <div class="prog-top"><span>📺 ${posLabel}</span><span>${total ? wc + " / " + total + " ep" : ""}</span></div>
         <div class="prog-bar"><div style="width:${pct}%"></div></div>
         ${nextLabel ? `<div class="prog-top"><span>${nextLabel}</span></div>` : ""}
-        <div class="prog-actions">
-          <button class="btn-mini ep-plus" ${next ? "" : "disabled"} title="Mark next episode watched">+1 Ep</button>
-          <button class="btn-mini ep-set" title="Jump to a specific episode">Set…</button>
-        </div>
-        <div class="ep-picker hidden"></div>
       </div>`;
+    progActionsHtml = `
+      <div class="prog-actions">
+        <button class="btn-mini ep-plus" ${next ? "" : "disabled"} title="Mark next episode watched">+1 Ep</button>
+        <button class="btn-mini ep-set" title="Jump to a specific episode">Set…</button>
+      </div>
+      <div class="ep-picker hidden"></div>`;
   }
   return `
     <div class="card" data-id="${item.id}">
@@ -1299,21 +1387,27 @@ function cardHtml(item) {
         <div class="genre-chips">${(item.genres || []).slice(0, 2).map((g) =>
           `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>
         ${progHtml}
-        <select class="status-select" title="Status">
-          ${STATUSES.map((s) => `<option value="${s.key}" ${item.status === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
-        </select>
-        <div class="stars" title="My rating (click a star; click again to clear)">
-          ${stars}<span class="rating-num">${item.rating ? item.rating + "/10" : "unrated"}</span>
-        </div>
-        <textarea class="notes" rows="1" placeholder="Personal notes…">${escapeHtml(item.notes)}</textarea>
-        <div class="reminder-row">
-          <select class="reminder-select" title="Release reminder">
-            ${REMINDER_OPTIONS.map((o) =>
-              `<option value="${o.v}" ${String(item.reminderOffsetDays ?? "") === o.v ? "selected" : ""}>${o.label}</option>`).join("")}
+        <div class="card-topline">
+          ${scorePill}
+          <select class="status-select" title="Status">
+            ${STATUSES.map((s) => `<option value="${s.key}" ${item.status === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
           </select>
         </div>
-        <div class="card-footer">
-          <button class="btn-del" title="Remove from library">🗑 Remove</button>
+        <div class="card-extra">
+          ${progActionsHtml}
+          <div class="stars" title="My rating (click a star; click again to clear)">
+            ${stars}<span class="rating-num">${item.rating ? item.rating + "/10" : "unrated"}</span>
+          </div>
+          <textarea class="notes" rows="1" placeholder="Personal notes…">${escapeHtml(item.notes)}</textarea>
+          <div class="reminder-row">
+            <select class="reminder-select" title="Release reminder">
+              ${REMINDER_OPTIONS.map((o) =>
+                `<option value="${o.v}" ${String(item.reminderOffsetDays ?? "") === o.v ? "selected" : ""}>${o.label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="card-footer">
+            <button class="btn-del" title="Remove from library">🗑 Remove</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -2851,10 +2945,30 @@ function switchView(view) {
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => switchView(t.dataset.view)));
 
+/* ---- Mobile: collapsible header search + stats toggle ---- */
+{
+  const st = $("#searchToggle");
+  if (st) st.addEventListener("click", () => {
+    const open = document.body.classList.toggle("search-open");
+    if (open) searchInput.focus(); else closeDropdown();
+  });
+  const stats = $("#statsToggle");
+  if (stats) stats.addEventListener("click", () => {
+    const open = $("#statsBar").classList.toggle("open");
+    stats.setAttribute("aria-expanded", String(open));
+    stats.textContent = open ? "📊 Hide stats ▴" : "📊 Show stats ▾";
+  });
+}
+
 /* ================= What's new / changelog ================= */
 // Newest first. The top entry's `id` is what we compare against to decide
 // whether to show the "new update" dot on the Settings tab.
 const CHANGELOG = [
+  { id: "2026-07-25", date: "25 July 2026", items: [
+    "A fresh coat of paint: unified teal accents, clearer amber notification badges, and higher-contrast banner links.",
+    "Tidier library cards on desktop, with a compact rating pill and a soft poster fade. The editing controls now tuck away until you hover over a card.",
+    "Smoother on phones: search collapses into a magnifier, the filters share one scrolling row, the stats tuck behind a toggle, and cards switch to space-saving horizontal rows.",
+  ] },
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
     "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
