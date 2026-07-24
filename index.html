@@ -608,6 +608,17 @@
       </div>
 
       <div class="settings-block">
+        <h3>Cloud sync</h3>
+        <p class="hint">Connect Google Drive to back your library up and keep it in sync across your devices. It saves to a single file in your own Drive, private to you, and the app can only ever see that one file.<span id="driveStatusLine"></span></p>
+        <div class="key-row">
+          <button class="btn" id="driveConnectBtn" type="button">Connect Google Drive</button>
+          <button class="btn secondary hidden" id="driveSyncNowBtn" type="button">↻ Sync now</button>
+          <button class="btn secondary hidden" id="driveDisconnectBtn" type="button">Disconnect</button>
+        </div>
+        <div class="key-status" id="driveStatus"></div>
+      </div>
+
+      <div class="settings-block">
         <h3>Backup</h3>
         <p class="hint">Your library lives only in this browser's local storage. Export a JSON backup occasionally, or move your data to another browser.</p>
         <div class="key-row">
@@ -640,11 +651,15 @@ const LS_ITEMS = "mt_items";
 const LS_SETTINGS = "mt_settings";
 const LS_TV_REFRESH = "mt_lastTvRefresh";
 const LS_DISMISSED = "mt_dismissedRecs";
+const LS_LAST_MODIFIED = "mt_lastModified";
+const LS_GDRIVE = "mt_gdrive";
 
 const state = {
   items: loadJSON(LS_ITEMS, []),
   settings: Object.assign({ apiKey: "", notificationsEnabled: false }, loadJSON(LS_SETTINGS, {})),
   dismissedRecs: loadJSON(LS_DISMISSED, []),
+  lastModified: +localStorage.getItem(LS_LAST_MODIFIED) || 0,
+  gdrive: Object.assign({ enabled: false, fileId: null, lastSynced: 0 }, loadJSON(LS_GDRIVE, {})),
   view: "library",
 };
 
@@ -654,9 +669,19 @@ function loadJSON(key, fallback) {
     return raw ? JSON.parse(raw) : fallback;
   } catch { return fallback; }
 }
-function saveItems() { localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); }
+function saveItems() { localStorage.setItem(LS_ITEMS, JSON.stringify(state.items)); touchData(); }
 function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(state.settings)); }
-function saveDismissed() { localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs)); }
+function saveDismissed() { localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs)); touchData(); }
+
+// Records the moment the library last changed, and (if Drive is on) queues a
+// push. Guarded so that applying a remote copy doesn't count as a local edit.
+let _applyingRemote = false;
+function touchData() {
+  if (_applyingRemote) return;
+  state.lastModified = Date.now();
+  localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
+  if (typeof scheduleDrivePush === "function") scheduleDrivePush();
+}
 
 /* ================= Utilities ================= */
 const $ = (sel) => document.querySelector(sel);
@@ -2119,6 +2144,267 @@ function exportBackup() {
   renderBackupNudge();
 }
 
+/* ================= Google Drive sync ================= */
+const GOOGLE_CLIENT_ID = "1039935472518-qv88egnpiuhroepsrlicvat61cg55cn3.apps.googleusercontent.com";
+const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const GDRIVE_FILENAME = "bearwatch-library.json";
+
+let _tokenClient = null, _accessToken = null, _tokenExpiry = 0;
+let _tokenResolve = null, _tokenReject = null;
+let _drivePushTimer = null, _drivePushing = false, _drivePushQueued = false, _driveDirty = false;
+
+function saveGdrive() { localStorage.setItem(LS_GDRIVE, JSON.stringify(state.gdrive)); }
+
+function relTime(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60); if (m < 60) return m + " min ago";
+  const h = Math.round(m / 60); if (h < 24) return h + " hr ago";
+  const d = Math.round(h / 24); return d + " day" + (d === 1 ? "" : "s") + " ago";
+}
+
+// Load Google's sign-in library on demand, so nothing external loads unless
+// someone actually uses Drive sync.
+function loadGis() {
+  return new Promise((resolve, reject) => {
+    if (window.google && google.accounts && google.accounts.oauth2) return resolve();
+    let s = document.getElementById("gis-script");
+    if (s) { s.addEventListener("load", resolve); s.addEventListener("error", () => reject(new Error("Could not load Google sign-in"))); return; }
+    s = document.createElement("script");
+    s.id = "gis-script"; s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Could not load Google sign-in"));
+    document.head.appendChild(s);
+  });
+}
+
+function ensureTokenClient() {
+  if (_tokenClient) return;
+  _tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GDRIVE_SCOPE,
+    callback: (resp) => {
+      const ok = resp && resp.access_token;
+      if (ok) {
+        _accessToken = resp.access_token;
+        _tokenExpiry = Date.now() + ((resp.expires_in || 3600) * 1000) - 60000;
+      }
+      const res = _tokenResolve, rej = _tokenReject;
+      _tokenResolve = _tokenReject = null;
+      if (ok) { if (res) res(_accessToken); }
+      else if (rej) rej(new Error("Authorization was cancelled"));
+    },
+    error_callback: (err) => {
+      const rej = _tokenReject;
+      _tokenResolve = _tokenReject = null;
+      if (rej) rej(new Error((err && err.type) || "Authorization failed"));
+    },
+  });
+}
+
+async function getAccessToken(interactive) {
+  if (_accessToken && Date.now() < _tokenExpiry) return _accessToken;
+  await loadGis();
+  ensureTokenClient();
+  return new Promise((resolve, reject) => {
+    _tokenResolve = resolve; _tokenReject = reject;
+    try { _tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" }); }
+    catch (e) { _tokenResolve = _tokenReject = null; reject(e); }
+  });
+}
+
+async function driveFetch(url, opts, interactive) {
+  const token = await getAccessToken(interactive);
+  const o = opts || {};
+  const res = await fetch(url, Object.assign({}, o, {
+    headers: Object.assign({ Authorization: "Bearer " + token }, o.headers || {}),
+  }));
+  if (res.status === 401) { _accessToken = null; _tokenExpiry = 0; throw new Error("Session expired, please reconnect"); }
+  return res;
+}
+
+async function driveFindFileId(interactive) {
+  const q = encodeURIComponent("name='" + GDRIVE_FILENAME + "' and trashed=false");
+  const res = await driveFetch("https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id)&q=" + q, {}, interactive);
+  if (!res.ok) throw new Error("Drive lookup failed (" + res.status + ")");
+  const data = await res.json();
+  return (data.files && data.files[0]) ? data.files[0].id : null;
+}
+
+function currentSnapshot() {
+  return { app: "bearwatch", version: 1, lastModified: state.lastModified || 0,
+           items: state.items, dismissedRecs: state.dismissedRecs };
+}
+
+async function driveDownload(fileId, interactive) {
+  const res = await driveFetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", {}, interactive);
+  if (!res.ok) throw new Error("Drive download failed (" + res.status + ")");
+  return res.json();
+}
+
+async function driveUpload(interactive) {
+  const body = JSON.stringify(currentSnapshot());
+  let fileId = state.gdrive.fileId || await driveFindFileId(interactive);
+  if (fileId) {
+    const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files/" + fileId + "?uploadType=media",
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body }, interactive);
+    if (!res.ok) throw new Error("Drive save failed (" + res.status + ")");
+  } else {
+    const boundary = "bw" + Date.now();
+    const meta = JSON.stringify({ name: GDRIVE_FILENAME, mimeType: "application/json" });
+    const multipart = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + meta +
+      "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + body + "\r\n--" + boundary + "--";
+    const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+      { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: multipart }, interactive);
+    if (!res.ok) throw new Error("Drive create failed (" + res.status + ")");
+    fileId = (await res.json()).id;
+  }
+  state.gdrive.fileId = fileId;
+  state.gdrive.lastSynced = Date.now();
+  saveGdrive();
+  return fileId;
+}
+
+// Replace local data with the cloud copy (used when the cloud is newer).
+function applyRemote(remote) {
+  _applyingRemote = true;
+  state.items = Array.isArray(remote.items) ? remote.items : [];
+  state.dismissedRecs = Array.isArray(remote.dismissedRecs) ? remote.dismissedRecs : [];
+  state.lastModified = remote.lastModified || Date.now();
+  localStorage.setItem(LS_ITEMS, JSON.stringify(state.items));
+  localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs));
+  localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
+  _applyingRemote = false;
+  renderAll();
+}
+
+// On the very first link between a device and the cloud, combine both sides so
+// neither library is thrown away. Ongoing syncs use newest-wins instead.
+function mergeRemoteUnion(remote) {
+  const ids = new Set(state.items.map((it) => it && it.id));
+  for (const it of (remote.items || [])) if (it && it.id && !ids.has(it.id)) { state.items.push(it); ids.add(it.id); }
+  const ds = new Set(state.dismissedRecs);
+  for (const id of (remote.dismissedRecs || [])) ds.add(id);
+  state.dismissedRecs = [...ds];
+  state.lastModified = Date.now();
+  localStorage.setItem(LS_ITEMS, JSON.stringify(state.items));
+  localStorage.setItem(LS_DISMISSED, JSON.stringify(state.dismissedRecs));
+  localStorage.setItem(LS_LAST_MODIFIED, String(state.lastModified));
+  renderAll();
+}
+
+async function driveConnect() {
+  const status = $("#driveStatus");
+  status.className = "key-status"; status.textContent = "Connecting…";
+  try {
+    await getAccessToken(true);
+    const fileId = await driveFindFileId(true);
+    if (fileId) {
+      state.gdrive.fileId = fileId;
+      mergeRemoteUnion(await driveDownload(fileId, true));
+    }
+    state.gdrive.enabled = true; saveGdrive();
+    await driveUpload(true);
+    updateDriveUI();
+    status.className = "key-status ok";
+    status.textContent = "✓ Connected. Your library is backed up and will sync automatically.";
+  } catch (e) {
+    status.className = "key-status err";
+    status.textContent = "✗ " + (e.message || "Could not connect");
+  }
+}
+
+async function driveReconcile(interactive) {
+  let fileId = state.gdrive.fileId || await driveFindFileId(interactive);
+  if (!fileId) { await driveUpload(interactive); return; }
+  state.gdrive.fileId = fileId;
+  const remote = await driveDownload(fileId, interactive);
+  const remoteMod = (remote && remote.lastModified) || 0;
+  const localMod = state.lastModified || 0;
+  if (remoteMod > localMod) applyRemote(remote);
+  else if (localMod > remoteMod) await driveUpload(interactive);
+  else { state.gdrive.lastSynced = Date.now(); saveGdrive(); }
+}
+
+// Best-effort silent sync when the app opens.
+async function driveAutoSync() {
+  if (!state.gdrive.enabled) return;
+  try { await getAccessToken(false); }
+  catch (e) { updateDriveUI("reconnect"); return; }
+  try { await driveReconcile(false); updateDriveUI(); }
+  catch (e) { updateDriveUI("reconnect"); }
+}
+
+async function driveSyncNow() {
+  const status = $("#driveStatus");
+  status.className = "key-status"; status.textContent = "Syncing…";
+  try {
+    await driveReconcile(true);
+    updateDriveUI();
+    status.className = "key-status ok"; status.textContent = "✓ Synced.";
+  } catch (e) {
+    status.className = "key-status err"; status.textContent = "✗ " + (e.message || "Sync failed");
+  }
+}
+
+function scheduleDrivePush() {
+  if (!state.gdrive.enabled) return;
+  _driveDirty = true;
+  clearTimeout(_drivePushTimer);
+  _drivePushTimer = setTimeout(drivePushNow, 2000);
+}
+
+async function drivePushNow() {
+  if (!state.gdrive.enabled || !_driveDirty) return;
+  if (_drivePushing) { _drivePushQueued = true; return; }
+  _drivePushing = true; _driveDirty = false;
+  try { await driveUpload(false); updateDriveUI(); }
+  catch (e) { _driveDirty = true; }
+  _drivePushing = false;
+  if (_drivePushQueued) { _drivePushQueued = false; scheduleDrivePush(); }
+}
+
+function driveDisconnect() {
+  if (_accessToken && window.google && google.accounts && google.accounts.oauth2) {
+    try { google.accounts.oauth2.revoke(_accessToken); } catch (e) {}
+  }
+  _accessToken = null; _tokenExpiry = 0;
+  state.gdrive = { enabled: false, fileId: null, lastSynced: 0 };
+  saveGdrive();
+  updateDriveUI();
+  const status = $("#driveStatus");
+  status.className = "key-status";
+  status.textContent = "Disconnected. Your library is still saved on this device.";
+}
+
+function updateDriveUI(mode) {
+  const connectBtn = $("#driveConnectBtn");
+  if (!connectBtn) return;
+  const syncBtn = $("#driveSyncNowBtn"), disc = $("#driveDisconnectBtn"), line = $("#driveStatusLine");
+  if (state.gdrive.enabled) {
+    connectBtn.classList.add("hidden");
+    syncBtn.classList.remove("hidden");
+    disc.classList.remove("hidden");
+    let txt = mode === "reconnect" ? " Connected — tap Sync now to refresh." : " Connected.";
+    if (state.gdrive.lastSynced) txt += " Last synced " + relTime(state.gdrive.lastSynced) + ".";
+    line.textContent = txt;
+  } else {
+    connectBtn.classList.remove("hidden");
+    syncBtn.classList.add("hidden");
+    disc.classList.add("hidden");
+    line.textContent = "";
+  }
+}
+
+$("#driveConnectBtn").addEventListener("click", driveConnect);
+$("#driveSyncNowBtn").addEventListener("click", driveSyncNow);
+$("#driveDisconnectBtn").addEventListener("click", driveDisconnect);
+updateDriveUI();
+// Flush any pending change when the app is backgrounded (handy on phones).
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && state.gdrive.enabled && _driveDirty) drivePushNow();
+});
+
 function renderBackupNudge() {
   const el = $("#backupNudge");
   const last = +localStorage.getItem(LS_LAST_BACKUP) || 0;
@@ -2394,9 +2680,12 @@ if (navigator.storage && navigator.storage.persist) {
 
 renderAll();
 checkReminders();
-refreshAllTvDates();
-backfillMovieDetails();
-loadRecommendations();
+(async () => {
+  if (state.gdrive.enabled) { try { await driveAutoSync(); } catch (e) {} }
+  refreshAllTvDates();
+  backfillMovieDetails();
+  loadRecommendations();
+})();
 setInterval(checkReminders, 60 * 1000);
 </script>
 </body>
