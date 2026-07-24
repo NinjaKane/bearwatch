@@ -72,9 +72,22 @@
     max-height: 420px; overflow-y: auto; z-index: 60;
   }
   .search-result {
-    display: flex; gap: 12px; align-items: center;
-    padding: 8px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.04);
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 10px 12px; cursor: default; border-bottom: 1px solid rgba(255,255,255,.04);
   }
+  .search-result .sr-main { flex: 1; min-width: 0; }
+  /* Add-to-status picker, shared by search results and recommendations */
+  .add-picker { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+  .add-picker.col { flex-direction: column; flex-wrap: nowrap; padding: 0 9px 9px; margin-top: 0; }
+  .add-btn {
+    font-size: 11.5px; padding: 4px 9px; border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text-dim); border-radius: 6px;
+    cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s;
+  }
+  .add-picker.col .add-btn { width: 100%; text-align: center; }
+  .add-btn:hover { border-color: var(--accent); color: var(--accent-hover); }
+  .recs-actions { display: flex; margin: 0 0 12px; }
+  .recs-actions .btn-mini { flex: 0 0 auto; }
   .search-result:last-child { border-bottom: none; }
   .search-result:hover, .search-result.active { background: rgba(27,116,118,.13); }
   .search-result img, .search-result .thumb-ph {
@@ -231,7 +244,7 @@
   .rec-card .rec-meta { font-size: 11px; color: var(--text-dim); padding: 0 9px 8px; display: flex; gap: 6px; align-items: center; }
   .rec-card .rec-add { margin: auto 8px 8px; }
   .recs-head-btn { flex: 0 0 auto; font-size: 12px; padding: 3px 10px; }
-  .stats-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stats-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px; }
   .stats-bar:empty { display: none; }
   .stat-chip {
     background: var(--bg-card); border: 1px solid var(--border);
@@ -408,7 +421,7 @@
   .chip.later { background: rgba(255,255,255,.06); color: var(--text-dim); border: 1px solid var(--border); }
 
   /* ---------- Settings ---------- */
-  .settings-panel { max-width: 640px; }
+  .settings-panel { max-width: 640px; margin: 0 auto; }
   .settings-block {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 22px; margin-bottom: 20px;
@@ -849,19 +862,27 @@ function renderDropdown() {
     return `
       <div class="search-result" data-i="${i}">
         ${thumb ? `<img src="${thumb}" alt="">` : `<div class="thumb-ph">🎬</div>`}
-        <div>
+        <div class="sr-main">
           <div class="sr-title">${escapeHtml(title)}</div>
           <div class="sr-meta">
             <span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span>
             <span>${yearOf(date)}</span>
           </div>
+          ${tracked ? '<span class="sr-added">✓ In library</span>' : `
+          <div class="add-picker">
+            <button class="add-btn" type="button" data-i="${i}" data-status="watching">▶ Watching</button>
+            <button class="add-btn" type="button" data-i="${i}" data-status="watchlist">＋ Watchlist</button>
+            <button class="add-btn" type="button" data-i="${i}" data-status="watched">✓ Watched</button>
+          </div>`}
         </div>
-        ${tracked ? '<span class="sr-added">✓ In library</span>' : ""}
       </div>`;
   }).join("");
   dropdown.classList.remove("hidden");
-  dropdown.querySelectorAll(".search-result").forEach((el) => {
-    el.addEventListener("click", () => selectResult(searchResults[+el.dataset.i]));
+  dropdown.querySelectorAll(".add-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectResult(searchResults[+btn.dataset.i], btn.dataset.status);
+    });
   });
 }
 
@@ -881,7 +902,10 @@ function closeDropdown() {
 }
 
 /* ================= Add / manage items ================= */
-async function selectResult(r) {
+function statusLabel(s) {
+  return s === "watching" ? "Watching" : s === "watched" ? "Watched" : "Watchlist";
+}
+async function selectResult(r, status = "watchlist") {
   const id = r.media_type + "-" + r.id;
   closeDropdown();
   searchInput.value = "";
@@ -897,7 +921,7 @@ async function selectResult(r) {
     releaseDate: (r.media_type === "movie" ? r.release_date : r.first_air_date) || null,
     posterPath: r.poster_path || null,
     overview: r.overview || "",
-    status: "watchlist",
+    status: status,
     rating: null,
     notes: "",
     nextAirDate: null,
@@ -909,7 +933,7 @@ async function selectResult(r) {
   state.items.push(item);
   saveItems();
   renderAll();
-  toast(`Added to Watchlist: ${item.title}`);
+  toast(`Added to ${statusLabel(status)}: ${item.title}`);
 
   try {
     if (item.mediaType === "tv") {
@@ -2119,8 +2143,8 @@ function renderRecs() {
     <h2 class="section-title sec-toggle" data-sec="recs" title="Click to ${closed ? "expand" : "collapse"}">
       <span class="chev ${closed ? "closed" : ""}">▾</span>✨ You might like
       <span class="count">${recs.length}</span>
-      ${closed ? "" : `<button class="btn-mini recs-head-btn" id="recsRefresh" type="button" title="Refresh suggestions">↻ Refresh</button>`}
     </h2>
+    ${closed ? "" : `<div class="recs-actions"><button class="btn-mini" id="recsRefresh" type="button" title="Refresh suggestions">↻ Refresh</button></div>`}
     ${closed ? "" : `<div class="recs-row">
       ${recs.map((r) => {
         const title = r.media_type === "movie" ? r.title : r.name;
@@ -2133,7 +2157,11 @@ function renderRecs() {
             </div>
             <div class="rec-title" title="${escapeHtml(title || "")}">${escapeHtml(title || "")}</div>
             <div class="rec-meta"><span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span> ${yearOf(date)}</div>
-            <button class="btn-mini rec-add" type="button">+ Watchlist</button>
+            <div class="add-picker col">
+              <button class="add-btn" type="button" data-status="watching">▶ Watching</button>
+              <button class="add-btn" type="button" data-status="watchlist">＋ Watchlist</button>
+              <button class="add-btn" type="button" data-status="watched">✓ Watched</button>
+            </div>
           </div>`;
       }).join("")}
     </div>`}`;
@@ -2147,9 +2175,12 @@ function renderRecs() {
   el.querySelectorAll(".rec-card").forEach((card) => {
     const rec = recs.find((r) => r.media_type + "-" + r.id === card.dataset.id);
     card.querySelector(".rec-poster").addEventListener("click", () => openDetailsModal(recToItem(rec)));
-    card.querySelector(".rec-add").addEventListener("click", async () => {
-      await selectResult(rec);
-      renderRecs();   // drops the newly-added title from the row
+    card.querySelectorAll(".add-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await selectResult(rec, btn.dataset.status);
+        renderRecs();   // drops the newly-added title from the row
+      });
     });
     card.querySelector(".rec-dismiss").addEventListener("click", (e) => {
       e.stopPropagation();
