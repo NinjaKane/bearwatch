@@ -17,6 +17,8 @@ A little movie and TV tracker that runs entirely in your browser. You can keep t
 - Dig into your stats: hours watched, genre and decade breakdowns, rating spread, and a Wrapped-style card
 - Import your history from Netflix, Letterboxd, IMDb, Trakt, or honestly just about any CSV
 - Back the whole library up to a JSON file, and load it back in whenever
+- Optionally sync across your devices with your own Google Drive (see below)
+- Catch up on recent updates from the "What's new" list in Settings
 
 ## Getting started
 
@@ -31,15 +33,23 @@ The app runs you through these same steps the first time you open it, so you don
 
 ## Put it on your phone
 
-It installs like an app without going anywhere near an app store. On Android, open the live link in Chrome, tap the menu, and pick "Add to Home screen" (or "Install app" if it offers that). On an iPhone, open it in Safari, tap Share, then "Add to Home Screen". Either way you get the Bearwatch icon on your home screen and it opens fullscreen, just like a normal app. Your data still lives on that one device.
+It installs like an app without going anywhere near an app store. On Android, open the live link in Chrome, tap the menu, and pick "Add to Home screen" (or "Install app" if it offers that). On an iPhone, open it in Safari, tap Share, then "Add to Home Screen". Either way you get the Bearwatch icon on your home screen and it opens fullscreen, just like a normal app. By default your data lives on that one device, but if you'd like it in step across your phone and computer, see the next section.
+
+## Syncing across devices
+
+By default nothing leaves your browser, which also means your phone and your computer each keep their own separate library. If you'd rather have them stay in step, there's an optional Google Drive sync under **Settings → Cloud sync**. Connect it on each device with the same Google account and Bearwatch keeps them merged, and quietly backs your library up at the same time. It's free, and it uses your own Drive, so nobody else (me included) can see your data.
+
+It only ever touches a single file it creates in your Drive, called `bearwatch-library.json`. It cannot see, open, or touch anything else in your Drive, so the rest of your files stay completely private to you.
+
+**One thing to expect:** the first time you connect, Google shows a screen warning you that the app hasn't been verified (usually behind an "Advanced" link, then "Go to Bearwatch"). That's normal for a small personal project like this one rather than a sign anything's wrong. It comes up because I haven't paid to go through Google's formal verification, not because the app is doing anything it shouldn't, and because of the single-file limit above it genuinely can't reach the rest of your Drive. If you'd rather not sign in at all, you don't have to. The Export and Import buttons still move your data around by hand, exactly as before.
 
 ## Running it offline
 
-If you'd rather not use the hosted version, grab `index.html` and just double-click it. It opens in your browser and works exactly the same. The one catch: run as a local file, the browser ties your saved data to that file's exact spot, so try not to move or rename it once you've started adding things. Export a backup from Settings now and then just to be safe.
+If you'd rather not use the hosted version, grab `index.html` and just double-click it. It opens in your browser and works almost exactly the same, the one exception being Google Drive sync, which only works on the hosted link. The other catch: run as a local file, the browser ties your saved data to that file's exact spot, so try not to move or rename it once you've started adding things. Export a backup from Settings now and then just to be safe.
 
 ## A few things worth knowing
 
-Everything lives in your browser's local storage, so none of it gets uploaded anywhere. The flip side is that your data doesn't sync between browsers or devices, so if you want to move it somewhere, that's what the Export and Import buttons are for. And since there's no server running in the background, reminders only show up while the page is actually open. It can't ping your phone.
+Out of the box, everything lives in your browser's local storage, so none of it gets uploaded anywhere. That does mean each browser and device keeps its own separate copy, so to move data around you've got the Export and Import buttons, or the optional Google Drive sync above if you'd like it kept in step automatically. And since there's no server running in the background, reminders only show up while the page is actually open. It can't ping your phone.
 
 ## License
 
