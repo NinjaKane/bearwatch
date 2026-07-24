@@ -2,6 +2,9 @@
 media-tracker-backup-*.json
 *.backup.json
 
+# Raw logo source (the shipped icons in /icons are generated from this)
+logo-source.png
+
 # Local tooling / editor cruft
 .DS_Store
 Thumbs.db
