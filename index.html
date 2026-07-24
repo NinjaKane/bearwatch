@@ -16,18 +16,19 @@
 <meta name="apple-mobile-web-app-title" content="Bearwatch">
 <style>
   :root {
-    --bg: #0d0d10;
-    --bg-raised: #16161c;
-    --bg-card: #1c1c24;
-    --bg-input: #24242e;
-    --border: #2c2c38;
-    --text: #f0f0f3;
-    --text-dim: #9a9aa8;
-    --text-faint: #62626e;
+    --bg: #0a0d0e;
+    --bg-raised: #10171a;
+    --bg-card: #141d20;
+    --bg-input: #1b262a;
+    --border: #2a3a3b;
+    --text: #eef4f4;
+    --text-dim: #9fb3b3;
+    --text-faint: #647a7c;
     --accent: #1b7476;
-    --accent-hover: #26a0a2;
-    --amber: #e8a33d;
+    --accent-hover: #2bb0b3;
+    --amber: #f4b740;
     --green: #3dc98a;
+    --danger: #ff7865;
     --radius: 10px;
     --shadow: 0 10px 30px rgba(0,0,0,.45);
   }
@@ -301,7 +302,7 @@
     border-radius: 7px; padding: 5px 10px; font-size: 12px;
     transition: color .15s, border-color .15s;
   }
-  .btn-del:hover { color: var(--accent-hover); border-color: var(--accent); }
+  .btn-del:hover { color: var(--danger); border-color: var(--danger); }
   .reminder-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
   .reminder-row select { flex: 1; }
 
@@ -403,7 +404,7 @@
     font-size: 12px; font-weight: 700; white-space: nowrap;
   }
   .chip.today { background: rgba(27,116,118,.2); color: var(--accent-hover); border: 1px solid rgba(27,116,118,.5); }
-  .chip.week { background: rgba(232,163,61,.16); color: var(--amber); border: 1px solid rgba(232,163,61,.45); }
+  .chip.week { background: rgba(244,183,64,.16); color: var(--amber); border: 1px solid rgba(244,183,64,.45); }
   .chip.later { background: rgba(255,255,255,.06); color: var(--text-dim); border: 1px solid var(--border); }
 
   /* ---------- Settings ---------- */
@@ -431,7 +432,7 @@
   .btn.secondary:hover { background: #2e2e3a; }
   .key-status { margin-top: 10px; font-size: 13px; min-height: 18px; }
   .key-status.ok { color: var(--green); }
-  .key-status.err { color: var(--accent-hover); }
+  .key-status.err { color: var(--danger); }
   .toggle-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .toggle-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 
