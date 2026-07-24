@@ -2382,6 +2382,15 @@ if (!state.settings.region) {
   $("#libSort").value = state.libSort;
 }
 
+// Ask the browser to keep our data around, so it doesn't get auto-cleared
+// when the device runs low on space. Best effort, and silently ignored on
+// browsers that don't support it.
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persisted()
+    .then((already) => { if (!already) return navigator.storage.persist(); })
+    .catch(() => {});
+}
+
 renderAll();
 checkReminders();
 refreshAllTvDates();
