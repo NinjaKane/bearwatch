@@ -914,7 +914,7 @@ function renderDropdown() {
             <span>${yearOf(date)}</span>
             ${tracked ? `<span class="sr-added">✓ In ${statusLabel(tracked.status)}</span>` : ""}
           </div>
-          ${tracked ? '<div class="sr-open">Click to open →</div>' : `
+          ${tracked ? '<div class="sr-open">Open in your library →</div>' : `
           <div class="add-picker">
             <button class="add-btn" type="button" data-i="${i}" data-status="watching">▶ Watching</button>
             <button class="add-btn" type="button" data-i="${i}" data-status="watchlist">＋ Watchlist</button>
@@ -941,13 +941,15 @@ function renderDropdown() {
   });
 }
 
-// Open the details popup for a search hit: the real library item if we already
-// have it (so its "Update progress" button shows), otherwise a lightweight view.
+// Act on a search hit. Already in the library? Jump straight to its card so you
+// can update where you're up to. Otherwise show the summary popup (still there
+// for everything you don't have yet).
 function openSearchResult(r) {
   const existing = state.items.find((it) => it.id === r.media_type + "-" + r.id);
   closeDropdown();
   searchInput.value = "";
-  openDetailsModal(existing || recToItem(r));
+  if (existing) goToLibraryItem(existing.id);
+  else openDetailsModal(recToItem(r));
 }
 
 function moveActive(delta) {
