@@ -2108,9 +2108,17 @@ async function openDetailsModal(item) {
     const inLibrary = state.items.some((x) => x.id === item.id);
     // Stremio uses IMDb IDs as its content IDs (via Cinemeta), so once we know
     // the title's IMDb ID we can deep-link straight to it in the Stremio app.
+    // For a show you're part-way through, aim the link at your next unwatched
+    // episode ({imdb}:{season}:{episode}); otherwise open the title's page.
     const imdb = d && (d.imdb_id || (d.external_ids && d.external_ids.imdb_id));
     const stremioType = item.mediaType === "tv" ? "series" : "movie";
-    const stremioUrl = imdb ? `stremio:///detail/${stremioType}/${imdb}/${imdb}` : "";
+    let stremioVideoId = imdb, stremioAtNext = false;
+    if (imdb && item.mediaType === "tv") {
+      const libItem = state.items.find((x) => x.id === item.id);
+      const next = libItem ? nextEpisodeOf(libItem) : null;
+      if (next && next.s && next.e) { stremioVideoId = `${imdb}:${next.s}:${next.e}`; stremioAtNext = true; }
+    }
+    const stremioUrl = imdb ? `stremio:///detail/${stremioType}/${imdb}/${stremioVideoId}` : "";
 
     let providersHtml = "";
     const wp = d?.["watch/providers"]?.results;
@@ -2161,7 +2169,7 @@ async function openDetailsModal(item) {
           ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
           <div class="modal-actions">
             ${inLibrary ? `<button class="btn" id="modalGoLibrary" type="button">${item.mediaType === "tv" ? "📺 Update progress" : "✎ Open in your library"}</button>` : ""}
-            ${stremioUrl ? `<a class="btn stremio" href="${stremioUrl}" title="Open this title in the Stremio app">▶ Open in Stremio</a>` : ""}
+            ${stremioUrl ? `<a class="btn stremio" href="${stremioUrl}" title="${stremioAtNext ? "Open your next episode in the Stremio app" : "Open this title in the Stremio app"}">▶ ${stremioAtNext ? "Next episode in Stremio" : "Open in Stremio"}</a>` : ""}
             ${trailer ? `<a class="btn secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
             <a class="btn secondary" href="${tmdbUrl}" target="_blank" rel="noopener">TMDb page</a>
           </div>
@@ -2840,7 +2848,7 @@ const CHANGELOG = [
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
     "“You might like” Refresh now serves a fresh set of suggestions each time you press it.",
-    "Open a title straight in the Stremio app from its details popup, and click a streaming logo (Netflix and friends) to jump to where to watch it.",
+    "Open a title straight in the Stremio app from its details popup — for a show you're part-way through it jumps to your next episode. Streaming logos (Netflix and friends) are clickable too, taking you to where to watch.",
     "Added this “What's new” list so you can see recent updates.",
   ] },
   { id: "2026-07-23", date: "23 July 2026", items: [
