@@ -90,8 +90,7 @@
   .recs-actions .btn-mini { flex: 0 0 auto; }
   .search-result:last-child { border-bottom: none; }
   .search-result:hover, .search-result.active { background: rgba(27,116,118,.13); }
-  /* A row already in the library is clickable and jumps to that title */
-  .search-result.tracked { cursor: pointer; }
+  /* A row already in the library shows a hint that it jumps to that title */
   .search-result.tracked .sr-open { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
   .search-result.tracked:hover .sr-open { color: var(--accent-hover); }
   .search-result img, .search-result .thumb-ph {
@@ -864,7 +863,12 @@ searchInput.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1); }
   else if (e.key === "Enter") {
     e.preventDefault();
-    if (activeIndex >= 0 && searchResults[activeIndex]) openSearchResult(searchResults[activeIndex]);
+    const r = activeIndex >= 0 ? searchResults[activeIndex] : null;
+    if (!r) return;
+    // Enter is the keyboard shortcut: jump to it if you already have it,
+    // otherwise quick-add to your watchlist (the add buttons cover other statuses).
+    if (state.items.some((it) => it.id === r.media_type + "-" + r.id)) openSearchResult(r);
+    else selectResult(r);
   }
   else if (e.key === "Escape") closeDropdown();
 });
@@ -2073,7 +2077,8 @@ function goToLibraryItem(id) {
   document.querySelectorAll(".pill").forEach((p) => p.classList.toggle("active", p.dataset.type === "all"));
   const c = state.settings.collapsedSections || (state.settings.collapsedSections = {});
   if (c[it.status]) c[it.status] = false;
-  saveLibPrefs();
+  // Clear filters in memory only for this jump; deliberately NOT persisted, so
+  // the user's saved library filters survive and come back on next load.
   switchView("library");
   renderLibrary();
   requestAnimationFrame(() => {
@@ -2105,7 +2110,8 @@ async function openDetailsModal(item) {
       : "";
     const overview = d?.overview || item.overview || "No synopsis available.";
     const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`;
-    const inLibrary = state.items.some((x) => x.id === item.id);
+    const libItem = state.items.find((x) => x.id === item.id);
+    const inLibrary = !!libItem;
     // Stremio uses IMDb IDs as its content IDs (via Cinemeta), so once we know
     // the title's IMDb ID we can deep-link straight to it in the Stremio app.
     // For a show you're part-way through, aim the link at your next unwatched
@@ -2114,7 +2120,6 @@ async function openDetailsModal(item) {
     const stremioType = item.mediaType === "tv" ? "series" : "movie";
     let stremioVideoId = imdb, stremioAtNext = false;
     if (imdb && item.mediaType === "tv") {
-      const libItem = state.items.find((x) => x.id === item.id);
       const next = libItem ? nextEpisodeOf(libItem) : null;
       if (next && next.s && next.e) { stremioVideoId = `${imdb}:${next.s}:${next.e}`; stremioAtNext = true; }
     }
@@ -2219,19 +2224,24 @@ async function loadRecommendations(force = false) {
   // Shuffle the seeds so pressing Refresh draws on a different mix of your
   // library each time, giving a genuinely fresh row rather than the same list.
   seeds = shuffle(seeds.slice()).slice(0, 6);
-  const seen = new Map();
+  // Fire every seed/endpoint request at once rather than awaiting them in
+  // series, then fold the results together (order preserved by Promise.all).
+  const jobs = [];
   for (const s of seeds) {
     for (const endpoint of ["recommendations", "similar"]) {
-      try {
-        const data = await tmdbFetch(`/${s.mediaType === "movie" ? "movie" : "tv"}/${s.tmdbId}/${endpoint}`);
-        for (const r of (data.results || [])) {
-          r.media_type = r.media_type || (r.title ? "movie" : "tv");
-          if (r.media_type !== "movie" && r.media_type !== "tv") continue;
-          const id = r.media_type + "-" + r.id;
-          if (state.items.some((x) => x.id === id) || seen.has(id) || state.dismissedRecs.includes(id)) continue;
-          seen.set(id, r);
-        }
-      } catch { /* seed/endpoint failed, try next */ }
+      jobs.push(tmdbFetch(`/${s.mediaType === "movie" ? "movie" : "tv"}/${s.tmdbId}/${endpoint}`)
+        .then((data) => data.results || [])
+        .catch(() => []) /* seed/endpoint failed, skip it */);
+    }
+  }
+  const seen = new Map();
+  for (const results of await Promise.all(jobs)) {
+    for (const r of results) {
+      r.media_type = r.media_type || (r.title ? "movie" : "tv");
+      if (r.media_type !== "movie" && r.media_type !== "tv") continue;
+      const id = r.media_type + "-" + r.id;
+      if (state.items.some((x) => x.id === id) || seen.has(id) || state.dismissedRecs.includes(id)) continue;
+      seen.set(id, r);
     }
   }
   // Keep a deep, shuffled pool so Refresh can page through fresh suggestions
