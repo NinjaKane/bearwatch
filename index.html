@@ -334,8 +334,31 @@
     padding: 3px 10px; font-size: 12px; font-weight: 700;
   }
   .score-pill.unrated { background: rgba(255,255,255,.05); color: var(--text-faint); border-color: var(--border); }
+  .score-pill { cursor: pointer; }
   .card-topline { display: flex; align-items: center; gap: 8px; }
   .card-topline .status-select { flex: 1; min-width: 0; }
+  /* Rating popover opened from the score pill (replaces the always-on star row) */
+  .rating-wrap { position: relative; flex-shrink: 0; }
+  .rating-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 6;
+    background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px;
+    width: max-content; max-width: 250px;
+  }
+  .rating-pop .stars { font-size: 18px; }
+  .rating-clear {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 6px; padding: 3px 8px; font-size: 11.5px; align-self: flex-start;
+  }
+  .rating-clear:hover { color: var(--danger); border-color: var(--danger); }
+  /* "Ready to Watch" quick-queue toggle */
+  .ready-toggle {
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .ready-toggle:hover { color: var(--text); }
+  .ready-toggle.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   /* Secondary controls; revealed on hover on desktop, always shown on touch */
   .card-extra { display: flex; flex-direction: column; gap: 9px; }
   @media (hover: hover) and (pointer: fine) {
@@ -588,11 +611,12 @@
 
     main { padding: 16px 14px 48px; }
 
-    /* One horizontal scrolling filter row: type pills + genre + sort */
-    .lib-toolbar { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
-      gap: 8px; -webkit-overflow-scrolling: touch; padding-bottom: 4px; margin-bottom: 12px; }
-    .lib-toolbar::-webkit-scrollbar { display: none; }
-    .lib-toolbar .pills, .lib-toolbar #genreFilter, .lib-toolbar #libSort { flex: 0 0 auto; }
+    /* Pills scroll on their own row; genre + sort share the row below, both visible */
+    .lib-toolbar { flex-wrap: wrap; justify-content: flex-start; gap: 8px; margin-bottom: 12px; }
+    .lib-toolbar .pills { flex: 0 0 auto; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .lib-toolbar .pills::-webkit-scrollbar { display: none; }
+    .lib-toolbar .ready-toggle { flex: 0 0 auto; }
+    .lib-toolbar #genreFilter, .lib-toolbar #libSort { flex: 1 1 140px; min-width: 0; }
     #libFilter { display: none; }
 
     /* Four stat pills tucked behind a single toggle */
@@ -644,6 +668,7 @@
         <button class="pill" data-type="movie" type="button">🎬 Movies</button>
         <button class="pill" data-type="tv" type="button">📺 TV Shows</button>
       </div>
+      <button class="ready-toggle" id="readyBtn" type="button" title="Show only titles with an episode ready to watch right now">🍿 Ready to Watch</button>
       <input id="libFilter" type="text" placeholder="Filter by title…" autocomplete="off" spellcheck="false">
       <select id="genreFilter" title="Filter by genre"><option value="">All genres</option></select>
       <select id="libSort" title="Sort library">
@@ -1296,6 +1321,18 @@ function renderLibrary() {
     (!q || it.title.toLowerCase().includes(q)));
   renderStats(filtered);
 
+  if (state.libReady) {
+    const readyItems = filtered.filter(readyToWatch).sort(readySort);
+    root.innerHTML = `
+      <h2 class="section-title"><span class="dot" style="background:var(--amber)"></span>🍿 Ready to Watch
+        <span class="count">${readyItems.length}</span></h2>
+      ${readyItems.length
+        ? `<div class="grid">${readyItems.map(cardHtml).join("")}</div>`
+        : `<div class="empty">Nothing's ready right now. Titles appear here when you have an unwatched episode that has already aired.</div>`}`;
+    bindCardEvents(root);
+    return;
+  }
+
   if (!filtered.length) {
     root.innerHTML = `<div class="empty">No titles match the current filter.</div>`;
     return;
@@ -1345,9 +1382,16 @@ function cardHtml(item) {
     const v = i + 1;
     return `<span data-v="${v}" class="${item.rating >= v ? "filled" : ""}" title="${v}/10">★</span>`;
   }).join("");
-  // Compact rating pill shown by default; the full star row lives in the hover controls.
+  // Compact rating pill: click it to open a small star picker (replaces the old star row).
   const rated = item.rating != null;
-  const scorePill = `<span class="score-pill ${rated ? "" : "unrated"}" title="${rated ? "Your rating" : "Not rated yet"}">★ ${rated ? item.rating + "/10" : "Rate"}</span>`;
+  const ratingWrap = `
+    <div class="rating-wrap">
+      <button class="score-pill ${rated ? "" : "unrated"}" type="button" title="Set your rating">★ ${rated ? item.rating + "/10" : "Rate"}</button>
+      <div class="rating-pop hidden">
+        <div class="stars" title="Click a star to rate">${stars}</div>
+        <button class="rating-clear" type="button">Clear rating</button>
+      </div>
+    </div>`;
 
   // Progress bar (always visible) is separated from the +1 Ep / Set controls
   // (moved into the hover-revealed .card-extra) so the default card stays clean.
@@ -1370,7 +1414,7 @@ function cardHtml(item) {
       </div>`;
     progActionsHtml = `
       <div class="prog-actions">
-        <button class="btn-mini ep-plus" ${next ? "" : "disabled"} title="Mark next episode watched">+1 Ep</button>
+        <button class="btn-mini ep-plus" ${next ? "" : "disabled"} title="Mark next episode watched. Long-press or right-click to log several at once.">+1 Ep</button>
         <button class="btn-mini ep-set" title="Jump to a specific episode">Set…</button>
       </div>
       <div class="ep-picker hidden"></div>`;
@@ -1388,16 +1432,13 @@ function cardHtml(item) {
           `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>
         ${progHtml}
         <div class="card-topline">
-          ${scorePill}
+          ${ratingWrap}
           <select class="status-select" title="Status">
             ${STATUSES.map((s) => `<option value="${s.key}" ${item.status === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
           </select>
         </div>
         <div class="card-extra">
           ${progActionsHtml}
-          <div class="stars" title="My rating (click a star; click again to clear)">
-            ${stars}<span class="rating-num">${item.rating ? item.rating + "/10" : "unrated"}</span>
-          </div>
           <textarea class="notes" rows="1" placeholder="Personal notes…">${escapeHtml(item.notes)}</textarea>
           <div class="reminder-row">
             <select class="reminder-select" title="Release reminder">
@@ -1435,6 +1476,21 @@ function bindCardEvents(root) {
       renderAll();
     });
 
+    // Rating pill opens a small star picker; the pill itself shows the score.
+    const pill = card.querySelector(".score-pill");
+    const pop = card.querySelector(".rating-pop");
+    if (pill && pop) {
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const opening = pop.classList.contains("hidden");
+        closeAllRatingPops();
+        if (opening) pop.classList.remove("hidden");
+      });
+      pop.addEventListener("click", (e) => e.stopPropagation());
+      pop.querySelector(".rating-clear").addEventListener("click", () => {
+        item.rating = null; saveItems(); renderLibrary();
+      });
+    }
     card.querySelectorAll(".stars span[data-v]").forEach((star) => {
       star.addEventListener("click", () => {
         const v = +star.dataset.v;
@@ -1459,20 +1515,35 @@ function bindCardEvents(root) {
 
     if (item.mediaType === "tv") {
       const plus = card.querySelector(".ep-plus");
-      if (plus) plus.addEventListener("click", () => {
-        const next = nextEpisodeOf(item);
-        if (!next) return;
-        item.progress = next;
-        logWatchEvent(item, 1, item.runtime || 35);
-        saveItems();
-        renderLibrary();
-      });
       const picker = card.querySelector(".ep-picker");
       const setBtn = card.querySelector(".ep-set");
-      if (setBtn) setBtn.addEventListener("click", () => {
+      const togglePicker = () => {
         if (picker.classList.contains("hidden")) openEpisodePicker(item, picker);
         else { picker.classList.add("hidden"); picker.innerHTML = ""; }
-      });
+      };
+      if (setBtn) setBtn.addEventListener("click", togglePicker);
+      if (plus) {
+        // Tap = one episode. Long-press or right-click = open the stepper to log several.
+        let lpTimer = null, lpFired = false;
+        plus.addEventListener("click", () => {
+          if (lpFired) { lpFired = false; return; }   // swallow the click that ends a long-press
+          const next = nextEpisodeOf(item);
+          if (!next) return;
+          item.progress = next;
+          logWatchEvent(item, 1, item.runtime || 35);
+          saveItems();
+          renderLibrary();
+        });
+        plus.addEventListener("contextmenu", (e) => { e.preventDefault(); togglePicker(); });
+        plus.addEventListener("pointerdown", () => {
+          lpFired = false;
+          lpTimer = setTimeout(() => { lpFired = true; togglePicker(); }, 500);
+        });
+        const cancelLp = () => clearTimeout(lpTimer);
+        plus.addEventListener("pointerup", cancelLp);
+        plus.addEventListener("pointerleave", cancelLp);
+        plus.addEventListener("pointercancel", cancelLp);
+      }
     }
 
     card.querySelector(".btn-del").addEventListener("click", () => {
@@ -1483,6 +1554,42 @@ function bindCardEvents(root) {
       toast(`Removed: ${item.title}`);
     });
   });
+}
+
+function closeAllRatingPops() {
+  document.querySelectorAll(".rating-pop:not(.hidden)").forEach((p) => p.classList.add("hidden"));
+}
+document.addEventListener("click", closeAllRatingPops);
+
+/* ---- "Ready to Watch" queue: Watching titles with an episode ready now ---- */
+function parseSE(label) {
+  const m = /^S(\d+)E(\d+)$/.exec(label || "");
+  return m ? { s: +m[1], e: +m[2] } : null;
+}
+function remainingEps(it) {
+  if (it.mediaType !== "tv") return 0;
+  const total = it.totalEpisodes || (it.seasons ? it.seasons.reduce((a, s) => a + s.count, 0) : 0);
+  return Math.max(0, total - watchedCount(it));
+}
+function readyToWatch(it) {
+  if (it.status !== "watching") return false;
+  if (it.mediaType === "movie") return !it.releaseDate || daysUntil(it.releaseDate) <= 0;
+  const next = nextEpisodeOf(it);
+  if (!next) return false;   // finished, or fully caught up
+  // If the only unwatched episode is one that hasn't aired yet, it isn't ready.
+  if (it.nextAirDate && daysUntil(it.nextAirDate) > 0) {
+    const up = parseSE(it.nextEpisodeLabel);
+    if (up && up.s === next.s && up.e === next.e) return false;
+  }
+  return true;
+}
+// Soonest release/air date first, then the show closest to finishing a season.
+function readySort(a, b) {
+  const da = effectiveDate(a), db = effectiveDate(b);
+  if (da && db && da !== db) return da < db ? -1 : 1;
+  if (da && !db) return -1;
+  if (!da && db) return 1;
+  return remainingEps(a) - remainingEps(b);
 }
 
 /* ---- Episode picker ---- */
@@ -2968,6 +3075,9 @@ const CHANGELOG = [
     "A fresh coat of paint: unified teal accents, clearer amber notification badges, and higher-contrast banner links.",
     "Tidier library cards on desktop, with a compact rating pill and a soft poster fade. The editing controls now tuck away until you hover over a card.",
     "Smoother on phones: search collapses into a magnifier, the filters share one scrolling row, the stats tuck behind a toggle, and cards switch to space-saving horizontal rows.",
+    "Rate a title straight from the score pill, which now opens a quick star picker.",
+    "New 'Ready to Watch' filter shows just the titles with an episode ready for you right now.",
+    "Log a binge in one go: long-press or right-click '+1 Ep' to mark several episodes at once.",
   ] },
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
@@ -3017,6 +3127,11 @@ document.querySelectorAll(".pill").forEach((p) =>
     saveLibPrefs();
     renderLibrary();
   }));
+$("#readyBtn").addEventListener("click", () => {
+  state.libReady = !state.libReady;
+  $("#readyBtn").classList.toggle("active", state.libReady);
+  renderLibrary();
+});
 $("#libFilter").addEventListener("input", (e) => {
   state.libQuery = e.target.value;
   renderLibrary();
