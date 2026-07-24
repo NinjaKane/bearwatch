@@ -200,6 +200,29 @@
     padding: 1px 8px; background: rgba(255,255,255,.06); border: 1px solid var(--border);
     border-radius: 999px; font-size: 10.5px; color: var(--text-dim); white-space: nowrap;
   }
+  /* Custom tags */
+  .tag-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag-chip {
+    padding: 1px 8px; background: rgba(78,205,196,.12); border: 1px solid rgba(78,205,196,.3);
+    border-radius: 999px; font-size: 10.5px; color: var(--link); white-space: nowrap; cursor: pointer;
+  }
+  .tag-chip:hover { background: rgba(78,205,196,.22); }
+  .tag-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; color: var(--text-dim); flex-wrap: wrap; }
+  .tag-clear { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; }
+  .tag-clear:hover { color: var(--danger); border-color: var(--danger); }
+  .modal-tags { padding: 0 22px 20px; }
+  .mt-head { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+  .mt-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .mt-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px 3px 10px;
+    background: rgba(78,205,196,.12); border: 1px solid rgba(78,205,196,.3); border-radius: 999px; font-size: 12px; color: var(--link); }
+  .mt-remove { background: none; border: none; color: var(--link); font-size: 12px; padding: 0 2px; line-height: 1; }
+  .mt-remove:hover { color: var(--danger); }
+  .mt-input { background: var(--bg-input); border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; outline: none; min-width: 130px; }
+  .mt-input:focus { border-color: var(--accent); }
+  .mt-suggest { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .mt-suggest .sug { font-size: 11.5px; color: var(--text-faint); background: none; border: 1px dashed var(--border); border-radius: 999px; padding: 2px 9px; }
+  .mt-suggest .sug:hover { color: var(--accent-hover); border-color: var(--accent); }
 
   /* ---------- Details modal ---------- */
   .modal-overlay {
@@ -583,6 +606,9 @@
   .wrapped-card .w-line { font-size: 15px; margin: 7px 0; }
   .wrapped-card .w-line b { color: var(--amber); }
   .wrapped-card .w-fun { font-size: 13px; color: var(--text-dim); margin-top: 20px; font-style: italic; }
+  .wrapped-actions { display: flex; justify-content: center; padding: 16px 22px 22px; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .cal-head .btn { font-size: 13px; padding: 8px 14px; }
 
   /* ---------- Toasts ---------- */
   #toasts { position: fixed; bottom: 22px; right: 22px; z-index: 100; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
@@ -686,6 +712,10 @@
   </section>
 
   <section id="view-calendar" class="hidden">
+    <div class="cal-head">
+      <h2 class="section-title" style="margin:0">📅 Upcoming releases</h2>
+      <button class="btn secondary" id="icsExportBtn" type="button" title="Download a calendar file of your upcoming releases">📆 Add to your calendar (.ics)</button>
+    </div>
     <div id="calendarContent"></div>
   </section>
 
@@ -1314,16 +1344,21 @@ function renderLibrary() {
   const typeF = state.libType || "all";
   const q = (state.libQuery || "").trim().toLowerCase();
   const genreF = state.libGenre || "";
-  const filterActive = typeF !== "all" || !!q || !!genreF;
+  const tagF = state.libTag || "";
+  const filterActive = typeF !== "all" || !!q || !!genreF || !!tagF;
   const filtered = state.items.filter((it) =>
     (typeF === "all" || it.mediaType === typeF) &&
     (!genreF || (it.genres || []).includes(genreF)) &&
+    (!tagF || (it.tags || []).includes(tagF)) &&
     (!q || it.title.toLowerCase().includes(q)));
   renderStats(filtered);
+  const tagBar = tagF
+    ? `<div class="tag-filter-bar">Filtered by tag <span class="tag-chip">${escapeHtml(tagF)}</span><button class="tag-clear" type="button">✕ Clear</button></div>`
+    : "";
 
   if (state.libReady) {
     const readyItems = filtered.filter(readyToWatch).sort(readySort);
-    root.innerHTML = `
+    root.innerHTML = tagBar + `
       <h2 class="section-title"><span class="dot" style="background:var(--amber)"></span>🍿 Ready to Watch
         <span class="count">${readyItems.length}</span></h2>
       ${readyItems.length
@@ -1334,13 +1369,14 @@ function renderLibrary() {
   }
 
   if (!filtered.length) {
-    root.innerHTML = `<div class="empty">No titles match the current filter.</div>`;
+    root.innerHTML = tagBar + `<div class="empty">No titles match the current filter.</div>`;
+    if (root.querySelector(".tag-clear")) root.querySelector(".tag-clear").addEventListener("click", () => { state.libTag = null; renderLibrary(); });
     return;
   }
 
   const sorter = LIB_SORTERS[state.libSort] || LIB_SORTERS.added;
   const collapsed = state.settings.collapsedSections || {};
-  root.innerHTML = STATUSES.map((s) => {
+  root.innerHTML = tagBar + STATUSES.map((s) => {
     const items = filtered
       .filter((it) => it.status === s.key)
       .sort(sorter);
@@ -1430,6 +1466,8 @@ function cardHtml(item) {
         <div class="card-sub">${sub}</div>
         <div class="genre-chips">${(item.genres || []).slice(0, 2).map((g) =>
           `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>
+        ${(item.tags && item.tags.length) ? `<div class="tag-chips">${item.tags.map((t) =>
+          `<span class="tag-chip" data-tag="${escapeHtml(t)}" title="Filter by ${escapeHtml(t)}">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         ${progHtml}
         <div class="card-topline">
           ${ratingWrap}
@@ -1455,11 +1493,20 @@ function cardHtml(item) {
 }
 
 function bindCardEvents(root) {
+  const tc = root.querySelector(".tag-clear");
+  if (tc) tc.addEventListener("click", () => { state.libTag = null; renderLibrary(); });
+
   root.querySelectorAll(".card").forEach((card) => {
     const item = getItem(card.dataset.id);
     if (!item) return;
 
     card.querySelector(".poster-wrap").addEventListener("click", () => openDetailsModal(item));
+
+    card.querySelectorAll(".tag-chip").forEach((chip) => chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.libTag = chip.dataset.tag;
+      renderLibrary();
+    }));
 
     card.querySelector(".status-select").addEventListener("change", (e) => {
       const oldStatus = item.status;
@@ -1670,6 +1717,52 @@ function upcomingEntries() {
     .map((it) => ({ item: it, date: effectiveDate(it), days: effectiveDate(it) ? daysUntil(effectiveDate(it)) : null }))
     .filter((e) => e.date && e.days !== null && e.days >= 0)
     .sort((a, b) => a.days - b.days);
+}
+
+/* ---- iCal (.ics) export of upcoming releases ---- */
+function icsEscape(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+function icsDay(dstr) { return dstr.replace(/-/g, ""); }              // "2026-12-01" -> "20261201"
+function icsNextDay(dstr) {
+  const dt = new Date(dstr + "T00:00:00");
+  dt.setDate(dt.getDate() + 1);
+  return `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(dt.getDate()).padStart(2, "0")}`;
+}
+function buildIcs(entries) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");   // 20260725T...Z
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bearwatch//Release Calendar//EN",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Bearwatch Releases",
+  ];
+  for (const e of entries) {
+    const it = e.item;
+    const label = it.mediaType === "tv" && it.nextEpisodeLabel ? `${it.title} ${it.nextEpisodeLabel}` : it.title;
+    const summary = (it.mediaType === "tv" ? "📺 " : "🎬 ") + label;
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:bearwatch-${it.id}-${icsDay(e.date)}@bearwatch`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDay(e.date)}`,
+      `DTEND;VALUE=DATE:${icsNextDay(e.date)}`,
+      `SUMMARY:${icsEscape(summary)}`,
+      `DESCRIPTION:${icsEscape((it.mediaType === "tv" ? "New episode" : "Release") + " tracked in Bearwatch.")}`,
+      "TRANSP:TRANSPARENT",
+      "END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function downloadIcs() {
+  const entries = upcomingEntries();
+  if (!entries.length) { toast("No upcoming releases to export yet."); return; }
+  const blob = new Blob([buildIcs(entries)], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "bearwatch-calendar.ics";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`Exported ${entries.length} upcoming release${entries.length === 1 ? "" : "s"}.`);
 }
 
 function renderCalendar() {
@@ -2382,10 +2475,21 @@ async function openDetailsModal(item) {
         </div>
       </div>
       <p class="modal-overview">${escapeHtml(overview)}</p>
+      ${inLibrary ? `
+        <div class="modal-tags">
+          <div class="mt-head">🏷 Your tags</div>
+          <div class="mt-chips" id="mtChips"></div>
+          ${(() => {
+            const all = [...new Set(state.items.flatMap((i) => i.tags || []))].sort();
+            const sug = all.filter((t) => !(libItem.tags || []).includes(t)).slice(0, 8);
+            return sug.length ? `<div class="mt-suggest">${sug.map((t) => `<button class="sug" type="button" data-tag="${escapeHtml(t)}">+ ${escapeHtml(t)}</button>`).join("")}</div>` : "";
+          })()}
+        </div>` : ""}
       ${providersHtml}`;
     body.querySelector(".modal-close").addEventListener("click", closeModal);
     const goLib = body.querySelector("#modalGoLibrary");
     if (goLib) goLib.addEventListener("click", () => goToLibraryItem(item.id));
+    if (inLibrary) wireModalTags(body, libItem);
     const provSel = body.querySelector("#provRegion");
     if (provSel) provSel.addEventListener("change", () => {
       state.settings.region = provSel.value;
@@ -2408,6 +2512,35 @@ async function openDetailsModal(item) {
       }
     } catch { /* stored-data view stays */ }
   }
+}
+
+// Tag editor inside the details modal: add via the input, remove via the ✕,
+// or click a suggestion. Re-renders just the chip row so focus stays put.
+function wireModalTags(body, libItem) {
+  const chipsEl = body.querySelector("#mtChips");
+  if (!chipsEl) return;
+  const addTag = (raw) => {
+    const t = (raw || "").trim();
+    if (!t) return;
+    libItem.tags = libItem.tags || [];
+    if (!libItem.tags.some((x) => x.toLowerCase() === t.toLowerCase())) libItem.tags.push(t);
+    saveItems(); renderLibrary(); paint(true);
+  };
+  const removeTag = (t) => {
+    libItem.tags = (libItem.tags || []).filter((x) => x !== t);
+    saveItems(); renderLibrary(); paint(false);
+  };
+  function paint(focus) {
+    chipsEl.innerHTML = (libItem.tags || []).map((t) =>
+      `<span class="mt-chip">${escapeHtml(t)}<button class="mt-remove" type="button" data-tag="${escapeHtml(t)}" title="Remove">✕</button></span>`).join("") +
+      `<input class="mt-input" placeholder="Add a tag…" maxlength="30" autocomplete="off" spellcheck="false">`;
+    const input = chipsEl.querySelector(".mt-input");
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(input.value); } });
+    chipsEl.querySelectorAll(".mt-remove").forEach((b) => b.addEventListener("click", () => removeTag(b.dataset.tag)));
+    if (focus) input.focus();
+  }
+  paint(false);
+  body.querySelectorAll(".mt-suggest .sug").forEach((s) => s.addEventListener("click", () => addTag(s.dataset.tag)));
 }
 
 /* ================= Recommendations ================= */
@@ -3017,6 +3150,15 @@ function openWrapped() {
     busiest = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
   }
   const flights = (min / 60 / 14).toFixed(1);   // Sydney → LA is ~14 h
+  const ratedCount = state.items.filter((i) => i.rating).length;
+
+  // Structured lines (pre / value / post) so both the card and the image can render them.
+  const lines = [];
+  if (topGenre) lines.push({ pre: "Your genre of choice: ", val: topGenre[0], post: ` (${fmtH(topGenre[1])})` });
+  if (topRated) lines.push({ pre: "Your #1: ", val: topRated.title, post: `, you gave it ★ ${topRated.rating}` });
+  if (topShow) lines.push({ pre: "Most binged: ", val: topShow.title, post: ` (${epsSeenOf(topShow)} episodes)` });
+  if (busiest) lines.push({ pre: "Biggest month: ", val: busiest[0], post: ` (${fmtH(busiest[1])})` });
+  const w = { hours, days, moviesWatched, eps, ratedCount, lines, flights };
 
   const body = $("#modalBody");
   $("#modalOverlay").classList.remove("hidden");
@@ -3029,15 +3171,121 @@ function openWrapped() {
       <div class="w-row">
         <div class="w-stat"><div class="v">🍿 ${moviesWatched}</div><div class="l">movies</div></div>
         <div class="w-stat"><div class="v">📺 ${eps}</div><div class="l">episodes</div></div>
-        <div class="w-stat"><div class="v">⭐ ${state.items.filter((i) => i.rating).length}</div><div class="l">titles rated</div></div>
+        <div class="w-stat"><div class="v">⭐ ${ratedCount}</div><div class="l">titles rated</div></div>
       </div>
-      ${topGenre ? `<div class="w-line">Your genre of choice: <b>${escapeHtml(topGenre[0])}</b> (${fmtH(topGenre[1])})</div>` : ""}
-      ${topRated ? `<div class="w-line">Your #1: <b>${escapeHtml(topRated.title)}</b>, you gave it ★ ${topRated.rating}</div>` : ""}
-      ${topShow ? `<div class="w-line">Most binged: <b>${escapeHtml(topShow.title)}</b> (${epsSeenOf(topShow)} episodes)</div>` : ""}
-      ${busiest ? `<div class="w-line">Biggest month: <b>${escapeHtml(busiest[0])}</b> (${fmtH(busiest[1])})</div>` : ""}
+      ${lines.map((l) => `<div class="w-line">${escapeHtml(l.pre)}<b>${escapeHtml(l.val)}</b>${escapeHtml(l.post)}</div>`).join("")}
       <div class="w-fun">That's roughly ${flights} Sydney → LA flights of watching. No judgement. 🎬</div>
+    </div>
+    <div class="wrapped-actions">
+      <button class="btn" id="wrappedDownload" type="button">📷 Download image</button>
     </div>`;
   body.querySelector(".modal-close").addEventListener("click", closeModal);
+  body.querySelector("#wrappedDownload").addEventListener("click", () => downloadWrappedImage(w));
+}
+
+// Render the Wrapped summary onto a canvas and save it as a shareable PNG.
+function downloadWrappedImage(w) {
+  const S = 2;                       // supersample for crisp text
+  const W = 1080, H = 1350;
+  const cv = document.createElement("canvas");
+  cv.width = W * S; cv.height = H * S;
+  const ctx = cv.getContext("2d");
+  ctx.scale(S, S);
+  const cx = W / 2;
+
+  // Background: dark base with a teal glow up top and a violet glow at the base.
+  ctx.fillStyle = "#0d0d10"; ctx.fillRect(0, 0, W, H);
+  let g = ctx.createRadialGradient(W * 0.15, H * 0.12, 0, W * 0.15, H * 0.12, W * 0.9);
+  g.addColorStop(0, "rgba(27,116,118,.45)"); g.addColorStop(1, "rgba(27,116,118,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  g = ctx.createRadialGradient(W * 0.85, H * 0.9, 0, W * 0.85, H * 0.9, W * 0.9);
+  g.addColorStop(0, "rgba(154,92,224,.35)"); g.addColorStop(1, "rgba(154,92,224,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  const F = (size, weight = "400") => `${weight} ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+
+  let y = 150;
+  ctx.fillStyle = "#9fb3b3"; ctx.font = F(26, "700");
+  ctx.fillText("Y O U R   B E A R W A T C H   W R A P P E D", cx, y);
+  y += 120;
+  ctx.fillStyle = "#2bb0b3"; ctx.font = F(120, "800");
+  ctx.fillText(`${w.hours} hours`, cx, y);
+  y += 56;
+  ctx.fillStyle = "#9fb3b3"; ctx.font = F(30);
+  ctx.fillText(`of movies and shows, which is ${w.days} days of screen time`, cx, y);
+
+  // Three stat tiles
+  y += 70;
+  const tiles = [["🍿", w.moviesWatched, "movies"], ["📺", w.eps, "episodes"], ["⭐", w.ratedCount, "titles rated"]];
+  const tw = 260, th = 150, gap = 26;
+  const totalW = tiles.length * tw + (tiles.length - 1) * gap;
+  let tx = cx - totalW / 2;
+  for (const [icon, val, label] of tiles) {
+    ctx.fillStyle = "rgba(255,255,255,.05)";
+    roundRect(ctx, tx, y, tw, th, 16); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1.5;
+    roundRect(ctx, tx, y, tw, th, 16); ctx.stroke();
+    ctx.fillStyle = "#eef4f4"; ctx.font = F(46, "800");
+    ctx.fillText(`${icon} ${val}`, tx + tw / 2, y + 74);
+    ctx.fillStyle = "#9fb3b3"; ctx.font = F(24);
+    ctx.fillText(label, tx + tw / 2, y + 116);
+    tx += tw + gap;
+  }
+  y += th + 74;
+
+  // Highlight lines (label dim, value amber)
+  ctx.font = F(30);
+  for (const l of w.lines) {
+    drawRichLine(ctx, l.pre, l.val, l.post, cx, y, 30);
+    y += 54;
+  }
+
+  y += 18;
+  ctx.fillStyle = "#9fb3b3"; ctx.font = F(26, "400") + " italic";
+  ctx.font = `italic ${F(26)}`;
+  ctx.fillText(`That's roughly ${w.flights} Sydney → LA flights of watching. 🎬`, cx, y);
+
+  // Brand watermark
+  ctx.fillStyle = "#647a7c"; ctx.font = F(28, "800");
+  ctx.fillText("🐻‍❄️ Bearwatch", cx, H - 70);
+
+  cv.toBlob((blob) => {
+    if (!blob) { toast("Couldn't generate the image."); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "bearwatch-wrapped.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Saved bearwatch-wrapped.png");
+  }, "image/png");
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Draw "pre <value> post" centred, with the value in amber.
+function drawRichLine(ctx, pre, val, post, cx, y, size) {
+  const dim = "#c9d6d6", amber = "#f4b740";
+  ctx.font = `400 ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+  const wPre = ctx.measureText(pre).width, wPost = ctx.measureText(post).width;
+  ctx.font = `700 ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+  const wVal = ctx.measureText(val).width;
+  const total = wPre + wVal + wPost;
+  let x = cx - total / 2;
+  ctx.textAlign = "left";
+  ctx.font = `400 ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+  ctx.fillStyle = dim; ctx.fillText(pre, x, y); x += wPre;
+  ctx.font = `700 ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+  ctx.fillStyle = amber; ctx.fillText(val, x, y); x += wVal;
+  ctx.font = `400 ${size}px "Segoe UI", Inter, system-ui, sans-serif`;
+  ctx.fillStyle = dim; ctx.fillText(post, x, y);
+  ctx.textAlign = "center";
 }
 
 /* ================= View switching ================= */
@@ -3065,6 +3313,8 @@ document.querySelectorAll(".tab").forEach((t) =>
     stats.setAttribute("aria-expanded", String(open));
     stats.textContent = open ? "📊 Hide stats ▴" : "📊 Show stats ▾";
   });
+  const ics = $("#icsExportBtn");
+  if (ics) ics.addEventListener("click", downloadIcs);
 }
 
 /* ================= What's new / changelog ================= */
@@ -3078,6 +3328,9 @@ const CHANGELOG = [
     "Rate a title straight from the score pill, which now opens a quick star picker.",
     "New 'Ready to Watch' filter shows just the titles with an episode ready for you right now.",
     "Log a binge in one go: long-press or right-click '+1 Ep' to mark several episodes at once.",
+    "Save your Bearwatch Wrapped as an image to share, straight from the Wrapped popup.",
+    "Add your own tags (like 'Rewatching' or 'With Partner') to any title, then tap a tag to filter by it.",
+    "Export your upcoming releases to a calendar file (.ics) from the Calendar tab, ready to import into Google or Apple Calendar.",
   ] },
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
