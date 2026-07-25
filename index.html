@@ -3178,7 +3178,7 @@ function openWrapped() {
         <div class="w-stat"><div class="v">⭐ ${ratedCount}</div><div class="l">titles rated</div></div>
       </div>
       ${lines.map((l) => `<div class="w-line">${escapeHtml(l.pre)}<b>${escapeHtml(l.val)}</b>${escapeHtml(l.post)}</div>`).join("")}
-      <div class="w-fun">That's roughly ${flights} Sydney → LA flights of watching. No judgement. 🎬</div>
+      <div class="w-fun">That's roughly ${flights} Sydney to LA flights of watching. No judgement. 🎬</div>
     </div>
     <div class="wrapped-actions">
       <button class="btn" id="wrappedDownload" type="button">📷 Download image</button>
@@ -3188,7 +3188,7 @@ function openWrapped() {
 }
 
 // Render the Wrapped summary onto a canvas and save it as a shareable PNG.
-function downloadWrappedImage(w) {
+function renderWrappedCanvas(w) {
   const S = 2;                       // supersample for crisp text
   const W = 1080, H = 1350;
   const cv = document.createElement("canvas");
@@ -3248,13 +3248,15 @@ function downloadWrappedImage(w) {
   y += 18;
   ctx.fillStyle = "#9fb3b3"; ctx.font = F(26, "400") + " italic";
   ctx.font = `italic ${F(26)}`;
-  ctx.fillText(`That's roughly ${w.flights} Sydney → LA flights of watching. 🎬`, cx, y);
+  ctx.fillText(`That's roughly ${w.flights} Sydney to LA flights of watching. 🎬`, cx, y);
 
   // Brand watermark
   ctx.fillStyle = "#647a7c"; ctx.font = F(28, "800");
   ctx.fillText("🐻‍❄️ Bearwatch", cx, H - 70);
-
-  cv.toBlob((blob) => {
+  return cv;
+}
+function downloadWrappedImage(w) {
+  renderWrappedCanvas(w).toBlob((blob) => {
     if (!blob) { toast("Couldn't generate the image."); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
