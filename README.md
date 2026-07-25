@@ -35,6 +35,8 @@ The app runs you through these same steps the first time you open it, so you don
 
 It installs like an app without going anywhere near an app store. On Android, open the live link in Chrome, tap the menu, and pick "Add to Home screen" (or "Install app" if it offers that). On an iPhone, open it in Safari, tap Share, then "Add to Home Screen". Either way you get the Bearwatch icon on your home screen and it opens fullscreen, just like a normal app. By default your data lives on that one device, but if you'd like it in step across your phone and computer, see the next section.
 
+Once it's installed on Android, you can also add titles without opening the app first: when you're on an IMDb page (or most other apps), tap the system Share button and pick Bearwatch, and it opens with that title already searched. Sharing an IMDb link gives an exact match. (This uses the PWA Share Target feature, which is an Android extra; on iPhone the app just works normally without it.)
+
 ## Syncing across devices
 
 By default nothing leaves your browser, which also means your phone and your computer each keep their own separate library. If you'd rather have them stay in step, there's an optional Google Drive sync under **Settings → Cloud sync**. Connect it on each device with the same Google account and Bearwatch keeps them merged, and quietly backs your library up at the same time. It's free, and it uses your own Drive, so nobody else (me included) can see your data.

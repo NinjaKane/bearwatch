@@ -1841,6 +1841,28 @@ function downloadIcs() {
   toast(`Exported ${entries.length} upcoming release${entries.length === 1 ? "" : "s"}.`);
 }
 
+/* ---- Browser tab signal: title count + favicon dot for today's releases ---- */
+function updateBrowserAlert(todayCount) {
+  document.title = todayCount > 0 ? `(${todayCount}) Bearwatch` : "Bearwatch";
+  const link = document.querySelector('link[rel="icon"][sizes="32x32"]');
+  if (!link) return;
+  if (!link.dataset.orig) link.dataset.orig = link.getAttribute("href");
+  if (!todayCount) { link.setAttribute("href", link.dataset.orig); return; }
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas"); c.width = c.height = 32;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 32, 32);
+      ctx.beginPath(); ctx.arc(23, 9, 8, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff5b5b"; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#0d1314"; ctx.stroke();
+      link.setAttribute("href", c.toDataURL("image/png"));
+    } catch { /* cross-origin/file:// taint: leave the static favicon */ }
+  };
+  img.src = link.dataset.orig;
+}
+
 function renderCalendar() {
   const root = $("#calendarContent");
   const entries = upcomingEntries();
@@ -1850,6 +1872,7 @@ function renderCalendar() {
 
   const badge = $("#calBadge");
   badge.textContent = (today.length + week.length) || "";
+  updateBrowserAlert(today.length);   // tab title + favicon dot for things releasing today
 
   if (!entries.length) {
     root.innerHTML = `
@@ -2447,6 +2470,35 @@ $("#modalOverlay").addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#modalOverlay").classList.contains("hidden")) closeModal();
+});
+
+/* ---- Keyboard shortcuts (desktop): "/" focuses search, 1-9/0 rate the hovered card ---- */
+let hoveredCardId = null;
+{
+  const lib = $("#libraryContent");
+  lib.addEventListener("mouseover", (e) => {
+    const c = e.target.closest(".card");
+    if (c) hoveredCardId = c.dataset.id;
+  });
+  lib.addEventListener("mouseleave", () => { hoveredCardId = null; });
+}
+function isTypingTarget() {
+  const el = document.activeElement;
+  return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget()) return;
+  if (e.key === "/") { e.preventDefault(); searchInput.focus(); searchInput.select(); return; }
+  // Rate the poster you're hovering: 1-9 set that score, 0 sets 10, same key again clears.
+  const modalOpen = !$("#modalOverlay").classList.contains("hidden");
+  if (!modalOpen && state.view === "library" && hoveredCardId && /^[0-9]$/.test(e.key)) {
+    const item = getItem(hoveredCardId);
+    if (!item) return;
+    const v = e.key === "0" ? 10 : +e.key;
+    item.rating = item.rating === v ? null : v;
+    saveItems();
+    renderLibrary();
+  }
 });
 
 // Jump from the details popup (or search) to the item's card in the library,
@@ -3429,6 +3481,9 @@ const CHANGELOG = [
     "A new stat shows roughly how many hours are left to clear your Watching list.",
     "Two new library sorts: 'Closest to finishing' and 'Next episode soonest'.",
     "Light theme: turn it on under Settings, then Appearance.",
+    "Keyboard shortcuts on desktop: press '/' to jump to search, and hover a poster then press 1 to 9 (or 0 for 10) to rate it.",
+    "The browser tab shows a count, and a dot on the icon, when something releases today.",
+    "On Android you can share a title or link from another app straight into Bearwatch's search (tap Share, then Bearwatch).",
   ] },
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
@@ -3538,6 +3593,7 @@ renderAll();
 renderChangelog();
 updateSettingsDot();
 checkReminders();
+handleShareTarget();
 (async () => {
   if (state.gdrive.enabled) { try { await driveAutoSync(); } catch (e) {} }
   refreshAllTvDates();
@@ -3545,6 +3601,33 @@ checkReminders();
   loadRecommendations();
 })();
 setInterval(checkReminders, 60 * 1000);
+
+// PWA Share Target (Android): when a title/link is shared to Bearwatch, the app
+// opens at ./?title=&text=&url= . Pull an IMDb id for an exact match if present,
+// otherwise drop the shared text into the search box. No effect when unshared,
+// and iOS simply never invokes it, so Apple users are unaffected.
+async function handleShareTarget() {
+  const p = new URLSearchParams(location.search);
+  const shared = (p.get("title") || p.get("text") || "").trim();
+  const urlParam = p.get("url") || "";
+  if (!shared && !urlParam) return;
+  history.replaceState(null, "", location.pathname);   // tidy the URL so a refresh won't re-fire
+  switchView("library");
+  let query = shared || urlParam;
+  const m = `${shared} ${urlParam}`.match(/(tt\d{7,9})/i);
+  if (m && (state.settings.apiKey || "").trim()) {
+    try {
+      const data = await tmdbFetch(`/find/${m[1]}`, { external_source: "imdb_id" });
+      const hit = (data.movie_results || [])[0] || (data.tv_results || [])[0];
+      if (hit) query = hit.title || hit.name || query;
+    } catch { /* fall back to the raw shared text */ }
+  } else {
+    query = (shared.replace(/https?:\/\/\S+/g, "").trim()) || shared || urlParam;
+  }
+  searchInput.value = query;
+  searchInput.focus();
+  runSearch(query.trim());
+}
 </script>
 </body>
 </html>
