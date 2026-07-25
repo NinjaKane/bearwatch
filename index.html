@@ -34,6 +34,29 @@
     --radius: 10px;
     --shadow: 0 10px 30px rgba(0,0,0,.45);
   }
+  /* ---------- Light theme ---------- */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #eef2f2; --bg-raised: #ffffff; --bg-card: #ffffff; --bg-input: #eef3f3;
+    --border: #d2dede; --text: #15211f; --text-dim: #4c5f5f; --text-faint: #7c9090;
+    --accent: #12666a; --accent-hover: #0b5052; --accent-text: #ecfdfd;
+    --link: #0d7d80; --amber: #a9760a; --green: #1f9d67; --danger: #d6473a;
+    --shadow: 0 8px 26px rgba(0,0,0,.14);
+  }
+  /* Flip the dark theme's translucent-white surfaces to translucent-black */
+  :root[data-theme="light"] .navbar { background: rgba(255,255,255,.85); }
+  :root[data-theme="light"] .search-result { border-bottom-color: rgba(0,0,0,.06); }
+  :root[data-theme="light"] .tab:hover { background: rgba(0,0,0,.05); }
+  :root[data-theme="light"] .genre-chip { background: rgba(0,0,0,.05); }
+  :root[data-theme="light"] .score-pill.unrated { background: rgba(0,0,0,.04); }
+  :root[data-theme="light"] .prog-block { background: rgba(0,0,0,.03); }
+  :root[data-theme="light"] .nf-list { background: rgba(0,0,0,.02); }
+  :root[data-theme="light"] .nf-row:hover { background: rgba(0,0,0,.04); }
+  :root[data-theme="light"] .chip.later { background: rgba(0,0,0,.05); }
+  :root[data-theme="light"] .btn.secondary:hover { background: #e2e9e9; }
+  :root[data-theme="light"] .card:hover { border-color: #aebcbc; }
+  :root[data-theme="light"] .stars span { color: #c2cccc; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { color-scheme: dark; }
   body {
@@ -351,6 +374,12 @@
     font-size: 42px; color: var(--text-faint);
   }
   .poster-wrap .type-badge { position: absolute; top: 8px; left: 8px; z-index: 2; }
+  .new-badge {
+    position: absolute; top: 8px; right: 8px; z-index: 2;
+    background: var(--green); color: #06231a; font-size: 10px; font-weight: 800;
+    padding: 2px 8px; border-radius: 999px; letter-spacing: .3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  }
   /* Compact rating shown by default in place of the full star row */
   .score-pill {
     display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
@@ -705,6 +734,8 @@
         <option value="title">↓ Title A–Z</option>
         <option value="rating">↓ My rating</option>
         <option value="release">↓ Release date</option>
+        <option value="progress">↓ Closest to finishing</option>
+        <option value="upcoming">↓ Next episode soonest</option>
       </select>
     </div>
     <div id="backupNudge"></div>
@@ -747,6 +778,15 @@
           <button class="btn" id="saveKeyBtn" type="button">Save &amp; Test</button>
         </div>
         <div class="key-status" id="keyStatus"></div>
+      </div>
+
+      <div class="settings-block">
+        <h3>Appearance</h3>
+        <p class="hint">Bearwatch defaults to a dark theme. Switch to light if you'd rather.</p>
+        <label class="toggle-row">
+          <input type="checkbox" id="themeToggle">
+          Use light theme
+        </label>
       </div>
 
       <div class="settings-block">
@@ -1282,19 +1322,35 @@ function renderStats(items) {
   const { min, eps, moviesWatched } = libraryStats(items);
   const h = Math.round(min / 60);
   const days = min >= 1440 ? ` (${(min / 1440).toFixed(1)} days)` : "";
+  // Time to clear the Watching list: episodes left across shows in progress.
+  let clearMin = 0;
+  for (const it of items) if (it.status === "watching") clearMin += remainingEps(it) * (it.runtime || 35);
+  const clearH = Math.round(clearMin / 60);
   $("#statsBar").innerHTML = `
     <span class="stat-chip">🎬 <b>${movies}</b> movie${movies === 1 ? "" : "s"}</span>
     <span class="stat-chip">📺 <b>${shows}</b> show${shows === 1 ? "" : "s"}</span>
     <span class="stat-chip">🍿 <b>${moviesWatched}</b> movie${moviesWatched === 1 ? "" : "s"} + <b>${eps}</b> episode${eps === 1 ? "" : "s"} watched</span>
-    <span class="stat-chip">⏱ ≈ <b>${h} h</b> watched${days}</span>`;
+    <span class="stat-chip">⏱ ≈ <b>${h} h</b> watched${days}</span>
+    ${clearMin > 0 ? `<span class="stat-chip">⏳ ≈ <b>${clearH} h</b> to finish Watching</span>` : ""}`;
 }
 
+// Fraction of a show watched (movies: 1 if watched, else 0). Used by the "closest
+// to finishing" sort so shows nearest the finish line float to the top.
+function completionOf(it) {
+  if (it.mediaType === "tv") {
+    const total = it.totalEpisodes || (it.seasons ? it.seasons.reduce((a, s) => a + s.count, 0) : 0);
+    return total ? watchedCount(it) / total : 0;
+  }
+  return it.status === "watched" ? 1 : 0;
+}
 // Unrated / undated items sort to the bottom of their section.
 const LIB_SORTERS = {
-  added:   (a, b) => (b.addedAt || 0) - (a.addedAt || 0),
-  title:   (a, b) => a.title.localeCompare(b.title),
-  rating:  (a, b) => (b.rating || 0) - (a.rating || 0) || a.title.localeCompare(b.title),
-  release: (a, b) => (b.releaseDate || "0000").localeCompare(a.releaseDate || "0000"),
+  added:    (a, b) => (b.addedAt || 0) - (a.addedAt || 0),
+  title:    (a, b) => a.title.localeCompare(b.title),
+  rating:   (a, b) => (b.rating || 0) - (a.rating || 0) || a.title.localeCompare(b.title),
+  release:  (a, b) => (b.releaseDate || "0000").localeCompare(a.releaseDate || "0000"),
+  progress: (a, b) => completionOf(b) - completionOf(a) || a.title.localeCompare(b.title),
+  upcoming: (a, b) => (a.nextAirDate || "9999").localeCompare(b.nextAirDate || "9999") || a.title.localeCompare(b.title),
 };
 
 function renderLibrary() {
@@ -1469,6 +1525,7 @@ function cardHtml(item) {
       <div class="poster-wrap" title="Show details">
         ${poster ? `<img src="${poster}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
         <span class="type-badge ${item.mediaType}">${item.mediaType === "tv" ? "TV" : "Movie"}</span>
+        ${hasNewEpisode(item) ? `<span class="new-badge" title="A new episode has aired that you haven't watched">● New</span>` : ""}
       </div>
       <div class="card-body">
         <div class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
@@ -1641,6 +1698,13 @@ function readyToWatch(it) {
     if (up && up.s === next.s && up.e === next.e) return false;
   }
   return true;
+}
+// True when a still-airing show has an aired episode you haven't watched yet
+// (a genuinely "new" episode), as opposed to plain old backlog on a finished show.
+function hasNewEpisode(it) {
+  return it.mediaType === "tv" && it.status === "watching"
+    && it.nextAirDate && daysUntil(it.nextAirDate) > 0
+    && readyToWatch(it);
 }
 // Soonest release/air date first, then the show closest to finishing a season.
 function readySort(a, b) {
@@ -1878,6 +1942,21 @@ function checkReminders() {
 /* ================= Settings ================= */
 $("#apiKeyInput").value = state.settings.apiKey || "";
 $("#notifToggle").checked = !!state.settings.notificationsEnabled;
+
+// Light / dark theme
+function applyTheme() {
+  const light = state.settings.theme === "light";
+  document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", light ? "#eef2f2" : "#0d1314");
+}
+$("#themeToggle").checked = state.settings.theme === "light";
+$("#themeToggle").addEventListener("change", (e) => {
+  state.settings.theme = e.target.checked ? "light" : "dark";
+  saveSettings();
+  applyTheme();
+});
+applyTheme();
 
 $("#toggleKeyBtn").addEventListener("click", () => {
   const inp = $("#apiKeyInput");
@@ -3345,6 +3424,11 @@ const CHANGELOG = [
     "Save your Bearwatch Wrapped as an image to share, straight from the Wrapped popup.",
     "Add your own tags (like 'Rewatching' or 'With Partner') to any title, then tap a tag to filter by it.",
     "Export your upcoming releases to a calendar file (.ics) from the Calendar tab, ready to import into Google or Apple Calendar.",
+    "Show cards now show how far you are into a show: a percentage plus the episodes and rough hours you have left.",
+    "A green 'New' badge appears on a show when a fresh episode has aired that you haven't watched yet.",
+    "A new stat shows roughly how many hours are left to clear your Watching list.",
+    "Two new library sorts: 'Closest to finishing' and 'Next episode soonest'.",
+    "Light theme: turn it on under Settings, then Appearance.",
   ] },
   { id: "2026-07-24", date: "24 July 2026", items: [
     "Search now lets you add a title straight to Watching, Watchlist or Watched. Click any result to see its summary, and for titles already in your library there's a button through to update where you're up to.",
