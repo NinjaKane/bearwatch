@@ -169,6 +169,8 @@
 
   /* ---------- Library toolbar & stats ---------- */
   .lib-toolbar { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
+  /* The attribute selector beats the .lib-toolbar display:flex, so `hidden` actually hides it */
+  .lib-toolbar[hidden] { display: none; }
   .pills {
     display: flex; gap: 4px; background: var(--bg-card);
     border: 1px solid var(--border); border-radius: 999px; padding: 4px;
@@ -1443,11 +1445,17 @@ function cardHtml(item) {
     const nextLabel = item.progress && !next
       ? `<span class="finished">✓ All caught up</span>`
       : (next && item.progress ? `Up next: S${next.s}E${next.e}` : "");
+    // How much is left, Trakt-style: episodes remaining and a rough time-to-finish.
+    const remaining = total ? Math.max(0, total - wc) : 0;
+    const mins = remaining * (item.runtime || 35);
+    const leftStr = remaining ? `${remaining} left · ~${mins >= 60 ? Math.round(mins / 60) + "h" : mins + "m"}` : "";
+    const bottom = (nextLabel || leftStr)
+      ? `<div class="prog-top"><span>${nextLabel}</span>${leftStr ? `<span>${leftStr}</span>` : ""}</div>` : "";
     progHtml = `
       <div class="prog-block">
-        <div class="prog-top"><span>📺 ${posLabel}</span><span>${total ? wc + " / " + total + " ep" : ""}</span></div>
+        <div class="prog-top"><span>📺 ${posLabel}</span><span>${total ? `${wc} / ${total} · ${pct}%` : ""}</span></div>
         <div class="prog-bar"><div style="width:${pct}%"></div></div>
-        ${nextLabel ? `<div class="prog-top"><span>${nextLabel}</span></div>` : ""}
+        ${bottom}
       </div>`;
     progActionsHtml = `
       <div class="prog-actions">
