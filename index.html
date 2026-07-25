@@ -446,6 +446,7 @@
     flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
     border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 600;
     transition: border-color .15s, color .15s;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
   }
   .btn-mini:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-hover); }
   .btn-mini:disabled { opacity: .4; cursor: default; }
@@ -1568,12 +1569,15 @@ function bindCardEvents(root) {
         if (picker.classList.contains("hidden")) openEpisodePicker(item, picker);
         else { picker.classList.add("hidden"); picker.innerHTML = ""; }
       };
+      // Open-only (not toggle): a mobile long-press fires BOTH our timer and a
+      // native contextmenu, so toggling would open then close. Opening twice is a no-op.
+      const openPicker = () => { if (picker.classList.contains("hidden")) openEpisodePicker(item, picker); };
       if (setBtn) setBtn.addEventListener("click", togglePicker);
       if (plus) {
-        // Tap = one episode. Long-press or right-click = open the stepper to log several.
-        let lpTimer = null, lpFired = false;
+        // Tap = one episode. Long-press or right-click = open the stepper.
+        let lpTimer = null, suppressClick = false;
         plus.addEventListener("click", () => {
-          if (lpFired) { lpFired = false; return; }   // swallow the click that ends a long-press
+          if (suppressClick) { suppressClick = false; return; }   // swallow the click that ends a long-press
           const next = nextEpisodeOf(item);
           if (!next) return;
           item.progress = next;
@@ -1581,10 +1585,10 @@ function bindCardEvents(root) {
           saveItems();
           renderLibrary();
         });
-        plus.addEventListener("contextmenu", (e) => { e.preventDefault(); togglePicker(); });
+        plus.addEventListener("contextmenu", (e) => { e.preventDefault(); suppressClick = true; openPicker(); });
         plus.addEventListener("pointerdown", () => {
-          lpFired = false;
-          lpTimer = setTimeout(() => { lpFired = true; togglePicker(); }, 500);
+          suppressClick = false;   // reset at the start of every press; safe to over-set elsewhere
+          lpTimer = setTimeout(() => { suppressClick = true; openPicker(); }, 500);
         });
         const cancelLp = () => clearTimeout(lpTimer);
         plus.addEventListener("pointerup", cancelLp);
