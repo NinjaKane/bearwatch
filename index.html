@@ -595,6 +595,28 @@
   /* ---------- Stats view ---------- */
   .stats-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
   .stats-head h2 { font-size: 19px; }
+  .stats-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* Multi-select filter bar: toggle chips for type, tags and genres. */
+  .stats-filters {
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 16px;
+  }
+  .sf-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .sf-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-faint); margin-right: 4px; min-width: 46px; }
+  .sf-chip {
+    padding: 4px 12px; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 999px; font-size: 12.5px; color: var(--text-dim); cursor: pointer;
+    transition: color .12s, background .12s, border-color .12s;
+  }
+  .sf-chip:hover { color: var(--text); }
+  .sf-chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .sf-clear {
+    align-self: flex-start; background: none; border: none; color: var(--link);
+    font-size: 12px; cursor: pointer; padding: 2px 0; text-decoration: underline;
+  }
+  .stats-filter-note { font-size: 12px; color: var(--text-dim); margin: -4px 0 18px; }
   .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .stat-tile {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -1134,10 +1156,29 @@ function renderDropdown() {
 // for everything you don't have yet).
 function openSearchResult(r) {
   const existing = state.items.find((it) => it.id === r.media_type + "-" + r.id);
+  if (existing) {
+    closeDropdown();
+    searchInput.value = "";
+    goToLibraryItem(existing.id);
+    return;
+  }
+  // Not in your library yet: show the summary popup, but hang on to the query
+  // and the current results so the popup can offer a way back, in case this
+  // wasn't the title you meant.
+  const snap = { query: searchInput.value.trim(), results: searchResults.slice() };
   closeDropdown();
   searchInput.value = "";
-  if (existing) goToLibraryItem(existing.id);
-  else openDetailsModal(recToItem(r));
+  openDetailsModal(recToItem(r), { backToSearch: snap });
+}
+
+// Re-open the search dropdown from a snapshot taken before a details popup.
+function restoreSearch(snap) {
+  closeModal();
+  searchInput.value = snap.query;
+  searchResults = snap.results.slice();
+  document.body.classList.add("search-open");   // in case the mobile field was collapsed
+  renderDropdown();
+  searchInput.focus();
 }
 
 function moveActive(delta) {
@@ -2528,7 +2569,7 @@ function goToLibraryItem(id) {
   });
 }
 
-async function openDetailsModal(item) {
+async function openDetailsModal(item, opts = {}) {
   const overlay = $("#modalOverlay");
   const body = $("#modalBody");
   overlay.classList.remove("hidden");
@@ -2610,6 +2651,7 @@ async function openDetailsModal(item) {
           </div>
           ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
           <div class="modal-actions">
+            ${opts.backToSearch ? `<button class="btn secondary" id="modalBackSearch" type="button">← Back to results</button>` : ""}
             ${inLibrary ? `<button class="btn" id="modalGoLibrary" type="button">${item.mediaType === "tv" ? "📺 Update progress" : "✎ Open in your library"}</button>` : ""}
             ${stremioUrl ? `<a class="btn stremio" href="${stremioUrl}" title="${stremioAtNext ? "Open your next episode in the Stremio app" : "Open this title in the Stremio app"}">▶ ${stremioAtNext ? "Next episode in Stremio" : "Open in Stremio"}</a>` : ""}
             ${trailer ? `<a class="btn secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
@@ -2630,6 +2672,11 @@ async function openDetailsModal(item) {
         </div>` : ""}
       ${providersHtml}`;
     body.querySelector(".modal-close").addEventListener("click", closeModal);
+    const back = body.querySelector("#modalBackSearch");
+    // stopPropagation: keep this click from reaching the document listener that
+    // closes the dropdown for clicks outside the search box (it would immediately
+    // re-close the dropdown we're about to reopen).
+    if (back) back.addEventListener("click", (e) => { e.stopPropagation(); restoreSearch(opts.backToSearch); });
     const goLib = body.querySelector("#modalGoLibrary");
     if (goLib) goLib.addEventListener("click", () => goToLibraryItem(item.id));
     if (inLibrary) wireModalTags(body, libItem);
@@ -3161,6 +3208,20 @@ function barRows(entries, unit) {
     </div>`).join("");
 }
 
+// Which titles the stats view is currently scoped to. Not persisted: a filter
+// is a here-and-now question ("how much anime have I watched?"), not a setting.
+// tags/genres are multi-select: a title matches if it has ANY chosen tag AND ANY
+// chosen genre (and the type), so picking more chips widens each facet.
+let statsFilter = { tags: [], genres: [], type: "all" };
+function statsScope() {
+  return state.items.filter((it) => {
+    if (statsFilter.type !== "all" && it.mediaType !== statsFilter.type) return false;
+    if (statsFilter.tags.length && !(it.tags || []).some((t) => statsFilter.tags.includes(t))) return false;
+    if (statsFilter.genres.length && !(it.genres || []).some((g) => statsFilter.genres.includes(g))) return false;
+    return true;
+  });
+}
+
 function renderStatsView() {
   const root = $("#statsContent");
   if (!state.items.length) {
@@ -3168,20 +3229,80 @@ function renderStatsView() {
       <p>Add some titles to your library and the numbers will appear here.</p></div>`;
     return;
   }
-  const { min, eps, moviesWatched } = libraryStats(state.items);
-  const rated = state.items.filter((i) => i.rating);
+
+  // Build the header + filter bar once, plus a wiring helper, so the "no matches"
+  // state and the full view share the same controls.
+  const allTags = [...new Set(state.items.flatMap((i) => i.tags || []))].sort((a, b) => a.localeCompare(b));
+  const allGenres = [...new Set(state.items.flatMap((i) => i.genres || []))].sort((a, b) => a.localeCompare(b));
+  // Drop any selection whose tag/genre no longer exists in the library.
+  statsFilter.tags = statsFilter.tags.filter((t) => allTags.includes(t));
+  statsFilter.genres = statsFilter.genres.filter((g) => allGenres.includes(g));
+  const items = statsScope();
+  const filterActive = statsFilter.tags.length || statsFilter.genres.length || statsFilter.type !== "all";
+
+  const chip = (label, on, data) =>
+    `<button class="sf-chip${on ? " on" : ""}" type="button" ${data}>${escapeHtml(label)}</button>`;
+  const typeChips = [["all", "All"], ["movie", "Movies"], ["tv", "TV"]]
+    .map(([v, l]) => chip(l, statsFilter.type === v, `data-type="${v}"`)).join("");
+  const tagChips = allTags.map((t) => chip("🏷 " + t, statsFilter.tags.includes(t), `data-tag="${escapeHtml(t)}"`)).join("");
+  const genreChips = allGenres.map((g) => chip(g, statsFilter.genres.includes(g), `data-genre="${escapeHtml(g)}"`)).join("");
+  const headHtml = `
+    <div class="stats-head">
+      <h2>📊 Your viewing stats</h2>
+      <div class="stats-controls">
+        <button class="btn" id="wrappedBtn" type="button">🎁 Your Wrapped</button>
+      </div>
+    </div>
+    <div class="stats-filters">
+      <div class="sf-group"><span class="sf-label">Show</span>${typeChips}</div>
+      ${allTags.length ? `<div class="sf-group"><span class="sf-label">Tags</span>${tagChips}</div>` : ""}
+      ${allGenres.length ? `<div class="sf-group"><span class="sf-label">Genres</span>${genreChips}</div>` : ""}
+      ${filterActive ? `<button class="sf-clear" id="sfClear" type="button">Clear filters</button>` : ""}
+    </div>`;
+  const wireHead = () => {
+    $("#wrappedBtn").addEventListener("click", openWrapped);
+    const root2 = $("#statsContent");
+    root2.querySelectorAll(".sf-chip[data-type]").forEach((b) =>
+      b.addEventListener("click", () => { statsFilter.type = b.dataset.type; renderStatsView(); }));
+    const toggle = (arr, v) => arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+    root2.querySelectorAll(".sf-chip[data-tag]").forEach((b) =>
+      b.addEventListener("click", () => { statsFilter.tags = toggle(statsFilter.tags, b.dataset.tag); renderStatsView(); }));
+    root2.querySelectorAll(".sf-chip[data-genre]").forEach((b) =>
+      b.addEventListener("click", () => { statsFilter.genres = toggle(statsFilter.genres, b.dataset.genre); renderStatsView(); }));
+    const clr = $("#sfClear");
+    if (clr) clr.addEventListener("click", () => { statsFilter = { tags: [], genres: [], type: "all" }; renderStatsView(); });
+  };
+
+  if (!items.length) {
+    root.innerHTML = headHtml +
+      `<div class="stat-hint" style="text-align:center;padding:40px 0">No titles match these filters. Try fewer, or different, chips.</div>`;
+    wireHead();
+    return;
+  }
+
+  const scopeBits = [];
+  if (statsFilter.tags.length) scopeBits.push(`tagged <b>${statsFilter.tags.map(escapeHtml).join("</b> / <b>")}</b>`);
+  if (statsFilter.genres.length) scopeBits.push(`<b>${statsFilter.genres.map(escapeHtml).join("</b> / <b>")}</b>`);
+  if (statsFilter.type !== "all") scopeBits.push(statsFilter.type === "tv" ? "TV shows only" : "movies only");
+  const filterNote = filterActive
+    ? `<div class="stats-filter-note">Showing ${items.length} title${items.length === 1 ? "" : "s"}${
+        scopeBits.length ? " · " + scopeBits.join(" · ") : ""}. Wrapped still covers your whole library.</div>`
+    : "";
+
+  const { min, eps, moviesWatched } = libraryStats(items);
+  const rated = items.filter((i) => i.rating);
   const avgRating = rated.length
     ? (rated.reduce((a, b) => a + b.rating, 0) / rated.length).toFixed(1) : "—";
 
   let backlogMin = 0;
-  for (const it of state.items.filter((i) => i.status === "watchlist")) {
+  for (const it of items.filter((i) => i.status === "watchlist")) {
     backlogMin += it.mediaType === "movie"
       ? (it.runtime || 110)
       : Math.max(0, (it.totalEpisodes || 0) - (it.progress ? watchedCount(it) : 0)) * (it.runtime || 35);
   }
 
   const genreMin = {};
-  for (const it of state.items) {
+  for (const it of items) {
     const m = itemWatchedMinutes(it);
     if (!m) continue;
     const gs = it.genres && it.genres.length ? it.genres : ["Uncategorised"];
@@ -3190,14 +3311,14 @@ function renderStatsView() {
   const topGenres = Object.entries(genreMin).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
   const dist = Array.from({ length: 10 }, (_, i) =>
-    [`${i + 1} ★`, state.items.filter((it) => it.rating === i + 1).length]).reverse();
+    [`${i + 1} ★`, items.filter((it) => it.rating === i + 1).length]).reverse();
 
   const topRated = [...rated].sort((a, b) => b.rating - a.rating || a.title.localeCompare(b.title)).slice(0, 5);
-  const topShows = state.items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
+  const topShows = items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
     .sort((a, b) => epsSeenOf(b) - epsSeenOf(a)).slice(0, 5);
 
   const decMin = {};
-  for (const it of state.items) {
+  for (const it of items) {
     const m = itemWatchedMinutes(it);
     if (!m || !it.releaseDate) continue;
     const d = it.releaseDate.slice(0, 3) + "0s";
@@ -3205,12 +3326,14 @@ function renderStatsView() {
   }
   const decades = Object.entries(decMin).sort((a, b) => a[0].localeCompare(b[0]));
 
-  const tv = state.items.filter((i) => i.mediaType === "tv");
+  const tv = items.filter((i) => i.mediaType === "tv");
   const tvDone = tv.filter((i) => i.status === "watched" || (i.totalEpisodes && epsSeenOf(i) >= i.totalEpisodes)).length;
   const tvGoing = tv.filter((i) => i.status === "watching").length;
 
   // Viewing over time, from the watch-event log (fills up as you use the app).
-  const events = loadJSON(LS_EVENTS, []);
+  // Scope it to the filtered titles too, so the chart matches the rest.
+  const scopeIds = new Set(items.map((i) => i.id));
+  const events = loadJSON(LS_EVENTS, []).filter((e) => scopeIds.has(e.id));
   const byMonth = {};
   for (const e of events) {
     const d = new Date(e.t);
@@ -3225,11 +3348,7 @@ function renderStatsView() {
   }
   const hasEvents = events.length > 0;
 
-  root.innerHTML = `
-    <div class="stats-head">
-      <h2>📊 Your viewing stats</h2>
-      <button class="btn" id="wrappedBtn" type="button">🎁 Your Wrapped</button>
-    </div>
+  root.innerHTML = headHtml + filterNote + `
     <div class="stat-tiles">
       <div class="stat-tile"><div class="v">${Math.round(min / 60)}</div><div class="l">hours watched</div></div>
       <div class="stat-tile"><div class="v">${moviesWatched}</div><div class="l">movies watched</div></div>
@@ -3262,7 +3381,7 @@ function renderStatsView() {
         ${decades.length ? barRows(decades, fmtH) : `<div class="stat-hint">No data yet.</div>`}
         <div class="stat-hint" style="margin-top:12px">TV: ${tvDone} finished · ${tvGoing} in progress · ${tv.length - tvDone - tvGoing} parked</div></div>
     </div>`;
-  $("#wrappedBtn").addEventListener("click", openWrapped);
+  wireHead();
 }
 
 /* ================= Wrapped ================= */
