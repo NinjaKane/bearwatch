@@ -142,7 +142,10 @@
   .type-badge.movie { background: rgba(61,140,201,.22); color: #6fb3e0; }
   .type-badge.tv { background: #1b4d4e; color: #a8e6cf; }
 
-  .tabs { display: flex; gap: 6px; margin-left: auto; }
+  /* Grow to fill the space after the search box and centre the tabs within it.
+     On one row that seats them centre-right; when the bar wraps them onto their
+     own line, they sit centred rather than hugging the right edge. */
+  .tabs { display: flex; gap: 6px; flex: 1 1 auto; justify-content: center; }
   .tab {
     background: none; border: none; color: var(--text-dim);
     padding: 9px 15px; border-radius: 8px; font-weight: 600; font-size: 14.5px;
@@ -332,6 +335,42 @@
   .rec-card .rec-meta { font-size: 11px; color: var(--text-dim); padding: 0 9px 8px; display: flex; gap: 6px; align-items: center; }
   .rec-card .rec-add { margin: auto 8px 8px; }
   .recs-head-btn { flex: 0 0 auto; font-size: 12px; padding: 3px 10px; }
+
+  /* ---------- Explore (browse by category) ---------- */
+  .explore-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 8px 0 14px; }
+  .explore-head h2 { font-size: 19px; }
+  .explore-head .sub { font-size: 12.5px; color: var(--text-dim); }
+  .explore-controls {
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 18px;
+  }
+  .ec-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ec-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-faint); margin-right: 4px; min-width: 62px; }
+  .ec-chip {
+    padding: 4px 12px; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 999px; font-size: 12.5px; color: var(--text-dim); cursor: pointer;
+    transition: color .12s, background .12s, border-color .12s; white-space: nowrap;
+  }
+  .ec-chip:hover { color: var(--text); }
+  .ec-chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .ec-chip.coll { border-style: dashed; }
+  .ec-chip.coll.on { border-style: solid; }
+  .ec-chip.locked { opacity: .4; cursor: default; }
+  .ec-chip.locked:hover { color: var(--text-dim); }
+  .ec-sort {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 999px; padding: 6px 12px; outline: none; font-size: 12.5px; cursor: pointer;
+  }
+  .ec-sort:focus { border-color: var(--accent); }
+  .explore-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px;
+  }
+  .explore-grid .rec-card { flex: none; }
+  .explore-more { text-align: center; margin: 22px 0 8px; }
+  .explore-msg { padding: 40px 14px; text-align: center; color: var(--text-dim); font-size: 13.5px; }
+  .explore-skel { opacity: .5; pointer-events: none; }
   .stats-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px; }
   .stats-bar:empty { display: none; }
   .stat-chip {
@@ -687,7 +726,9 @@
     .search-toggle { display: inline-flex; margin-left: auto; }
     .search-wrap { display: none; max-width: none; }
     body.search-open .search-wrap { display: block; flex-basis: 100%; order: 5; }
-    .tabs { margin-left: 0; }
+    /* On mobile the magnifier's margin-left:auto pushes the tab group right, so
+       drop the desktop grow/centre and let the tabs keep their content width. */
+    .tabs { flex: 0 0 auto; margin-left: 0; }
 
     main { padding: 16px 14px 48px; }
 
@@ -732,6 +773,7 @@
     </div>
     <nav class="tabs">
       <button class="tab active" data-view="library">Library</button>
+      <button class="tab" data-view="explore">🧭 Explore</button>
       <button class="tab" data-view="calendar">Calendar<span class="badge" id="calBadge"></span></button>
       <button class="tab" data-view="stats">📊 Stats</button>
       <button class="tab" data-view="settings" title="Settings">⚙️<span class="tab-dot" id="settingsDot"></span></button>
@@ -763,8 +805,12 @@
     <div id="backupNudge"></div>
     <button class="stats-toggle" id="statsToggle" type="button" aria-expanded="false">📊 Show stats ▾</button>
     <div class="stats-bar" id="statsBar"></div>
-    <div id="recsSection"></div>
     <div id="libraryContent"></div>
+  </section>
+
+  <section id="view-explore" class="hidden">
+    <div id="recsSection"></div>
+    <div id="exploreBrowse"></div>
   </section>
 
   <section id="view-calendar" class="hidden">
@@ -2862,6 +2908,204 @@ function renderRecs() {
   });
 }
 
+/* ================= Explore (browse by category) ================= */
+// Movie and TV use different TMDb genre ids, so we map by name and hide any
+// chip that doesn't exist for the active type.
+const DISCOVER_GENRES = [
+  { label: "Action",      movie: 28,    tv: 10759 },
+  { label: "Comedy",      movie: 35,    tv: 35 },
+  { label: "Drama",       movie: 18,    tv: 18 },
+  { label: "Sci-Fi",      movie: 878,   tv: 10765 },
+  { label: "Fantasy",     movie: 14,    tv: null },
+  { label: "Horror",      movie: 27,    tv: null },
+  { label: "Thriller",    movie: 53,    tv: null },
+  { label: "Mystery",     movie: 9648,  tv: 9648 },
+  { label: "Crime",       movie: 80,    tv: 80 },
+  { label: "Romance",     movie: 10749, tv: null },
+  { label: "Adventure",   movie: 12,    tv: null },
+  { label: "Animation",   movie: 16,    tv: 16 },
+  { label: "Family",      movie: 10751, tv: 10751 },
+  { label: "Documentary", movie: 99,    tv: 99 },
+  { label: "Reality",     movie: null,  tv: 10764 },
+];
+// Curated collections that plain genres can't express (mostly origin/language).
+// `pin` locks the media type; otherwise a collection follows the Movies/TV toggle.
+const DISCOVER_COLLECTIONS = [
+  { key: "trending", label: "🔥 Trending",     trending: true },
+  { key: "anime",    label: "🗾 Anime",        params: { with_genres: "16", with_original_language: "ja" } },
+  { key: "kdrama",   label: "🇰🇷 K-Drama",     pin: "tv",    params: { with_original_language: "ko" } },
+  { key: "cdrama",   label: "🀄 C-Drama",      pin: "tv",    params: { with_original_language: "zh" } },
+  { key: "bolly",    label: "🇮🇳 Bollywood",   pin: "movie", params: { with_original_language: "hi" } },
+  { key: "korean",   label: "🇰🇷 Korean film", pin: "movie", params: { with_original_language: "ko" } },
+  { key: "spanish",  label: "🇪🇸 Spanish",     params: { with_original_language: "es" } },
+  { key: "french",   label: "🇫🇷 French",      params: { with_original_language: "fr" } },
+];
+const EXPLORE_SORTS = [
+  { v: "popularity.desc", label: "Popular" },
+  { v: "vote.desc",       label: "Top rated" },
+  { v: "newest",          label: "Newest" },
+];
+
+const exploreState = { type: "movie", genre: null, collection: null, sort: "popularity.desc",
+  page: 1, totalPages: 1, results: [], loading: false, error: "" };
+
+function activeCollection() {
+  return DISCOVER_COLLECTIONS.find((c) => c.key === exploreState.collection) || null;
+}
+// Effective media type: a pinned collection overrides the toggle.
+function exploreType() {
+  const c = activeCollection();
+  return (c && c.pin) ? c.pin : exploreState.type;
+}
+
+// Turn the current selection into a TMDb request (path + params).
+function buildDiscoverRequest(page) {
+  const mt = exploreType();
+  const coll = activeCollection();
+  if (coll && coll.trending) return { path: `/trending/${mt}/week`, params: { page: String(page) } };
+  const params = { page: String(page), include_adult: "false", "vote_count.gte": "20" };
+  if (exploreState.sort === "newest") {
+    params.sort_by = mt === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
+    const today = new Date().toISOString().slice(0, 10);   // hide unreleased, future-dated titles
+    params[mt === "movie" ? "primary_release_date.lte" : "first_air_date.lte"] = today;
+  } else if (exploreState.sort === "vote.desc") {
+    params.sort_by = "vote_average.desc";
+    params["vote_count.gte"] = "150";   // keep obscure 10/10s out of Top rated
+  } else {
+    params.sort_by = "popularity.desc";
+  }
+  if (coll && coll.params) Object.assign(params, coll.params);
+  else if (exploreState.genre) params.with_genres = String(exploreState.genre);
+  return { path: `/discover/${mt}`, params };
+}
+
+async function loadExplore(reset) {
+  if (!(state.settings.apiKey || "").trim()) { renderExplore(); return; }
+  if (reset) { exploreState.page = 1; exploreState.results = []; exploreState.totalPages = 1; }
+  exploreState.loading = true; exploreState.error = "";
+  renderExplore();
+  const mt = exploreType();
+  try {
+    const req = buildDiscoverRequest(exploreState.page);
+    const data = await tmdbFetch(req.path, req.params);
+    exploreState.totalPages = Math.min(data.total_pages || 1, 500);
+    const rows = (data.results || [])
+      .map((r) => ({ ...r, media_type: r.media_type || mt }))
+      .filter((r) => (r.media_type === "movie" || r.media_type === "tv") && (r.poster_path || r.title || r.name));
+    exploreState.results = reset ? rows : exploreState.results.concat(rows);
+  } catch (err) {
+    exploreState.error = err.message === "NO_KEY" ? "NO_KEY" : (err.message || "Something went wrong.");
+  }
+  exploreState.loading = false;
+  renderExplore();
+}
+
+function exploreCardHtml(r) {
+  const title = r.media_type === "movie" ? r.title : r.name;
+  const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
+  const tracked = state.items.find((it) => it.id === r.media_type + "-" + r.id);
+  return `
+    <div class="rec-card" data-id="${r.media_type}-${r.id}">
+      <div class="rec-poster" title="Show details">
+        ${r.poster_path ? `<img src="${IMG(r.poster_path, "w185")}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
+      </div>
+      <div class="rec-title" title="${escapeHtml(title || "")}">${escapeHtml(title || "")}</div>
+      <div class="rec-meta"><span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span> ${yearOf(date)}</div>
+      ${tracked
+        ? `<div class="add-picker col"><div style="text-align:center;padding:6px 8px 10px;color:var(--green);font-size:12px">✓ In ${statusLabel(tracked.status)}</div></div>`
+        : `<div class="add-picker col">
+            <button class="add-btn" type="button" data-status="watching">▶ Watching</button>
+            <button class="add-btn" type="button" data-status="watchlist">＋ Watchlist</button>
+            <button class="add-btn" type="button" data-status="watched">✓ Watched</button>
+          </div>`}
+    </div>`;
+}
+
+function renderExplore() {
+  const root = $("#exploreBrowse");
+  if (!root) return;
+  const hasKey = !!(state.settings.apiKey || "").trim();
+  const mt = exploreType();
+  const coll = activeCollection();
+  const typeLocked = !!(coll && coll.pin);
+
+  const typeChips = [["movie", "🎬 Movies"], ["tv", "📺 TV"]].map(([v, l]) =>
+    `<button class="ec-chip${mt === v ? " on" : ""}${typeLocked ? " locked" : ""}" type="button" data-etype="${v}">${l}</button>`).join("");
+  const genreChips = DISCOVER_GENRES.filter((g) => g[mt] != null).map((g) =>
+    `<button class="ec-chip${!coll && exploreState.genre === g[mt] ? " on" : ""}" type="button" data-genre="${g[mt]}">${escapeHtml(g.label)}</button>`).join("");
+  const collChips = DISCOVER_COLLECTIONS.map((c) =>
+    `<button class="ec-chip coll${exploreState.collection === c.key ? " on" : ""}" type="button" data-coll="${c.key}">${c.label}</button>`).join("");
+  const allOn = !coll && !exploreState.genre;
+  const sortLocked = !!(coll && coll.trending);
+  const sortSel = `<select class="ec-sort" id="ecSort"${sortLocked ? " disabled title=\"Trending has its own order\"" : ""}>
+      ${EXPLORE_SORTS.map((s) => `<option value="${s.v}"${exploreState.sort === s.v ? " selected" : ""}>${s.label}</option>`).join("")}
+    </select>`;
+
+  const controls = `
+    <div class="explore-head">
+      <h2>🧭 Explore</h2>
+      <span class="sub">Browse by genre or collection, then add straight to your library.</span>
+    </div>
+    <div class="explore-controls">
+      <div class="ec-row"><span class="ec-label">Show</span>${typeChips}
+        <span style="margin-left:auto">${sortSel}</span></div>
+      <div class="ec-row"><span class="ec-label">Category</span>
+        <button class="ec-chip${allOn ? " on" : ""}" type="button" data-genre="">All</button>${genreChips}</div>
+      <div class="ec-row"><span class="ec-label">Collections</span>${collChips}</div>
+    </div>`;
+
+  let bodyHtml;
+  if (!hasKey || exploreState.error === "NO_KEY") {
+    bodyHtml = `<div class="explore-msg">Add your TMDb API key in <b>⚙️ Settings</b> to browse titles.</div>`;
+  } else if (exploreState.error) {
+    bodyHtml = `<div class="explore-msg">Couldn't load titles: ${escapeHtml(exploreState.error)}</div>`;
+  } else if (!exploreState.results.length) {
+    bodyHtml = `<div class="explore-msg">${exploreState.loading ? "Loading…" : "Nothing to show here. Try another category."}</div>`;
+  } else {
+    bodyHtml = `<div class="explore-grid${exploreState.loading ? " explore-skel" : ""}">${
+      exploreState.results.map(exploreCardHtml).join("")}</div>` +
+      (exploreState.page < exploreState.totalPages
+        ? `<div class="explore-more"><button class="btn secondary" id="exploreMore" type="button"${exploreState.loading ? " disabled" : ""}>${exploreState.loading ? "Loading…" : "Load more"}</button></div>`
+        : "");
+  }
+  root.innerHTML = controls + bodyHtml;
+  wireExplore(root);
+}
+
+function wireExplore(root) {
+  root.querySelectorAll(".ec-chip[data-etype]").forEach((b) => b.addEventListener("click", () => {
+    if (typeLockedNow() || exploreState.type === b.dataset.etype) return;
+    exploreState.type = b.dataset.etype;
+    exploreState.genre = null;   // a genre id may not exist for the new type
+    loadExplore(true);
+  }));
+  root.querySelectorAll(".ec-chip[data-genre]").forEach((b) => b.addEventListener("click", () => {
+    exploreState.collection = null;
+    exploreState.genre = b.dataset.genre ? +b.dataset.genre : null;
+    loadExplore(true);
+  }));
+  root.querySelectorAll(".ec-chip[data-coll]").forEach((b) => b.addEventListener("click", () => {
+    exploreState.collection = exploreState.collection === b.dataset.coll ? null : b.dataset.coll;
+    if (exploreState.collection) exploreState.genre = null;
+    loadExplore(true);
+  }));
+  const sortSel = root.querySelector("#ecSort");
+  if (sortSel) sortSel.addEventListener("change", () => { exploreState.sort = sortSel.value; loadExplore(true); });
+  const more = root.querySelector("#exploreMore");
+  if (more) more.addEventListener("click", () => { exploreState.page += 1; loadExplore(false); });
+  root.querySelectorAll(".explore-grid .rec-card").forEach((card) => {
+    const r = exploreState.results.find((x) => x.media_type + "-" + x.id === card.dataset.id);
+    if (!r) return;
+    card.querySelector(".rec-poster").addEventListener("click", () => openDetailsModal(recToItem(r)));
+    card.querySelectorAll(".add-btn").forEach((btn) => btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectResult(r, btn.dataset.status);   // pushes synchronously; any TV detail refresh continues in the background
+      renderExplore();                        // instantly reflect the new "in library" state on the card
+    }));
+  });
+}
+function typeLockedNow() { const c = activeCollection(); return !!(c && c.pin); }
+
 /* ================= Monthly backup nudge ================= */
 const LS_LAST_BACKUP = "mt_lastBackup";
 const LS_BACKUP_SNOOZE = "mt_backupSnooze";
@@ -3556,9 +3800,14 @@ function drawRichLine(ctx, pre, val, post, cx, y, size) {
 function switchView(view) {
   state.view = view;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
-  ["library", "calendar", "stats", "settings"].forEach((v) =>
+  ["library", "explore", "calendar", "stats", "settings"].forEach((v) =>
     $("#view-" + v).classList.toggle("hidden", v !== view));
   if (view === "stats") renderStatsView();
+  if (view === "explore") {
+    renderRecs();   // the "You might like" row now lives here
+    if (!exploreState.results.length && !exploreState.loading) loadExplore(true);
+    else renderExplore();
+  }
   if (view === "settings") markChangelogSeen();
 }
 document.querySelectorAll(".tab").forEach((t) =>
@@ -3585,6 +3834,11 @@ document.querySelectorAll(".tab").forEach((t) =>
 // Newest first. The top entry's `id` is what we compare against to decide
 // whether to show the "new update" dot on the Settings tab.
 const CHANGELOG = [
+  { id: "2026-09-09", date: "9 September 2026", items: [
+    "New Explore tab: browse movies and TV by genre, or dip into collections like Trending, Anime, K-Drama, Bollywood, Korean, Spanish and French, then add a title straight to your library. 'You might like' now lives here too.",
+    "Search: when you open a title you don't own yet, a 'Back to results' button takes you back to your search, so picking the wrong one is easy to undo.",
+    "Stats now filter: narrow every number and chart by type, your own tags, and genres. Pick more than one (say, all your anime, or anime and rewatches together).",
+  ] },
   { id: "2026-07-25", date: "25 July 2026", items: [
     "A fresh coat of paint: unified teal accents, clearer amber notification badges, and higher-contrast banner links.",
     "Tidier library cards on desktop, with a compact rating pill and a soft poster fade. The editing controls now tuck away until you hover over a card.",
