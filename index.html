@@ -651,6 +651,8 @@
   }
   .sf-chip:hover { color: var(--text); }
   .sf-chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .sf-chip.coll { border-style: dashed; }
+  .sf-chip.coll.on { border-style: solid; }
   .sf-clear {
     align-self: flex-start; background: none; border: none; color: var(--link);
     font-size: 12px; cursor: pointer; padding: 2px 0; text-decoration: underline;
@@ -1283,6 +1285,7 @@ async function selectResult(r, status = "watchlist") {
       const d = await tmdbFetch("/movie/" + item.tmdbId);
       item.runtime = d.runtime || 0;
       item.genres = (d.genres || []).map((g) => g.name);
+      item.origLang = d.original_language || null;
       if (d.release_date) item.releaseDate = d.release_date;
     }
     saveItems();
@@ -1290,10 +1293,10 @@ async function selectResult(r, status = "watchlist") {
   } catch { /* non-fatal */ }
 }
 
-// One-time backfill for movies added before runtimes/genres were tracked.
+// One-time backfill for movies added before runtimes/genres/language were tracked.
 async function backfillMovieDetails() {
   if (!(state.settings.apiKey || "").trim()) return;
-  const movies = state.items.filter((it) => it.mediaType === "movie" && (it.runtime == null || !it.genres));
+  const movies = state.items.filter((it) => it.mediaType === "movie" && (it.runtime == null || !it.genres || !it.origLang));
   if (!movies.length) return;
   let changed = false;
   for (const it of movies) {
@@ -1301,6 +1304,7 @@ async function backfillMovieDetails() {
       const d = await tmdbFetch("/movie/" + it.tmdbId);
       it.runtime = d.runtime || 0;
       it.genres = (d.genres || []).map((g) => g.name);
+      it.origLang = d.original_language || null;
       changed = true;
     } catch { /* retry next load */ }
   }
@@ -1322,6 +1326,7 @@ async function refreshTvItem(item) {
   // Per-episode runtime in minutes; 0 = TMDb has no data (so we don't refetch forever).
   item.runtime = (d.episode_run_time && d.episode_run_time[0]) || d.last_episode_to_air?.runtime || 0;
   item.genres = (d.genres || []).map((g) => g.name);
+  item.origLang = d.original_language || item.origLang || null;
 }
 
 async function refreshAllTvDates(force = false) {
@@ -1329,7 +1334,7 @@ async function refreshAllTvDates(force = false) {
   const last = +localStorage.getItem(LS_TV_REFRESH) || 0;
   const stale = force || Date.now() - last >= 12 * 3600 * 1000;
   // Refresh on the 12 h schedule, plus any item still missing season/runtime/genre data (added before those features).
-  const tvItems = state.items.filter((it) => it.mediaType === "tv" && (stale || !it.seasons || it.runtime == null || !it.genres));
+  const tvItems = state.items.filter((it) => it.mediaType === "tv" && (stale || !it.seasons || it.runtime == null || !it.genres || !it.origLang));
   if (!tvItems.length) return;
   let ok = false;
   for (const item of tvItems) {
@@ -2741,9 +2746,10 @@ async function openDetailsModal(item, opts = {}) {
         `/${item.mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`,
         { append_to_response: "videos,watch/providers,external_ids" });
       if (!overlay.classList.contains("hidden")) render(detailCache[item.id]);
-      // opportunistically persist fresher genre data
+      // opportunistically persist fresher genre / language data
       if (detailCache[item.id].genres) {
         item.genres = detailCache[item.id].genres.map((g) => g.name);
+        if (detailCache[item.id].original_language) item.origLang = detailCache[item.id].original_language;
         saveItems();
       }
     } catch { /* stored-data view stays */ }
@@ -3456,14 +3462,39 @@ function barRows(entries, unit) {
 // is a here-and-now question ("how much anime have I watched?"), not a setting.
 // tags/genres are multi-select: a title matches if it has ANY chosen tag AND ANY
 // chosen genre (and the type), so picking more chips widens each facet.
-let statsFilter = { tags: [], genres: [], type: "all" };
+let statsFilter = { tags: [], genres: [], type: "all", collection: null };
+// One-click preset scopes, mirroring Explore's collections but computed over your
+// own library (genre + original language). Only collections that actually match
+// something in your library are offered.
+const STATS_COLLECTIONS = [
+  { key: "anime",    label: "🗾 Anime",       test: (it) => (it.genres || []).includes("Animation") && it.origLang === "ja" },
+  { key: "kdrama",   label: "🇰🇷 K-Drama",     test: (it) => it.mediaType === "tv" && it.origLang === "ko" },
+  { key: "cdrama",   label: "🀄 C-Drama",      test: (it) => it.mediaType === "tv" && (it.origLang === "zh" || it.origLang === "cn") },
+  { key: "bolly",    label: "🇮🇳 Bollywood",   test: (it) => it.mediaType === "movie" && it.origLang === "hi" },
+  { key: "animated", label: "🎨 Animated",     test: (it) => (it.genres || []).includes("Animation") },
+  { key: "docs",     label: "🎬 Documentary",  test: (it) => (it.genres || []).includes("Documentary") },
+  { key: "foreign",  label: "🌍 Non-English",  test: (it) => it.origLang && it.origLang !== "en" },
+];
+function statsCollection() { return STATS_COLLECTIONS.find((c) => c.key === statsFilter.collection) || null; }
 function statsScope() {
+  const coll = statsCollection();
   return state.items.filter((it) => {
     if (statsFilter.type !== "all" && it.mediaType !== statsFilter.type) return false;
     if (statsFilter.tags.length && !(it.tags || []).some((t) => statsFilter.tags.includes(t))) return false;
     if (statsFilter.genres.length && !(it.genres || []).some((g) => statsFilter.genres.includes(g))) return false;
+    if (coll && !coll.test(it)) return false;
     return true;
   });
+}
+// A short label for the current scope, used on the filtered Wrapped card.
+function statsScopeLabel() {
+  const coll = statsCollection();
+  if (coll) return coll.label.replace(/^[^\p{L}]+/u, "").trim();   // drop the leading emoji
+  const parts = [];
+  if (statsFilter.tags.length) parts.push(statsFilter.tags.join(" / "));
+  if (statsFilter.genres.length) parts.push(statsFilter.genres.join(" / "));
+  if (statsFilter.type !== "all") parts.push(statsFilter.type === "tv" ? "TV" : "Movies");
+  return parts.join(" · ");
 }
 
 function renderStatsView() {
@@ -3478,33 +3509,37 @@ function renderStatsView() {
   // state and the full view share the same controls.
   const allTags = [...new Set(state.items.flatMap((i) => i.tags || []))].sort((a, b) => a.localeCompare(b));
   const allGenres = [...new Set(state.items.flatMap((i) => i.genres || []))].sort((a, b) => a.localeCompare(b));
-  // Drop any selection whose tag/genre no longer exists in the library.
+  // Drop any selection whose tag/genre/collection no longer applies.
   statsFilter.tags = statsFilter.tags.filter((t) => allTags.includes(t));
   statsFilter.genres = statsFilter.genres.filter((g) => allGenres.includes(g));
+  const availColls = STATS_COLLECTIONS.filter((c) => state.items.some(c.test));
+  if (statsFilter.collection && !availColls.some((c) => c.key === statsFilter.collection)) statsFilter.collection = null;
   const items = statsScope();
-  const filterActive = statsFilter.tags.length || statsFilter.genres.length || statsFilter.type !== "all";
+  const filterActive = statsFilter.tags.length || statsFilter.genres.length || statsFilter.type !== "all" || statsFilter.collection;
 
-  const chip = (label, on, data) =>
-    `<button class="sf-chip${on ? " on" : ""}" type="button" ${data}>${escapeHtml(label)}</button>`;
+  const chip = (label, on, data, extra = "") =>
+    `<button class="sf-chip${extra}${on ? " on" : ""}" type="button" ${data}>${escapeHtml(label)}</button>`;
   const typeChips = [["all", "All"], ["movie", "Movies"], ["tv", "TV"]]
     .map(([v, l]) => chip(l, statsFilter.type === v, `data-type="${v}"`)).join("");
   const tagChips = allTags.map((t) => chip("🏷 " + t, statsFilter.tags.includes(t), `data-tag="${escapeHtml(t)}"`)).join("");
   const genreChips = allGenres.map((g) => chip(g, statsFilter.genres.includes(g), `data-genre="${escapeHtml(g)}"`)).join("");
+  const collChips = availColls.map((c) => chip(c.label, statsFilter.collection === c.key, `data-coll="${c.key}"`, " coll")).join("");
   const headHtml = `
     <div class="stats-head">
       <h2>📊 Your viewing stats</h2>
       <div class="stats-controls">
-        <button class="btn" id="wrappedBtn" type="button">🎁 Your Wrapped</button>
+        <button class="btn" id="wrappedBtn" type="button">🎁 ${filterActive ? "Wrapped for this filter" : "Your Wrapped"}</button>
       </div>
     </div>
     <div class="stats-filters">
       <div class="sf-group"><span class="sf-label">Show</span>${typeChips}</div>
+      ${availColls.length ? `<div class="sf-group"><span class="sf-label">Collections</span>${collChips}</div>` : ""}
       ${allTags.length ? `<div class="sf-group"><span class="sf-label">Tags</span>${tagChips}</div>` : ""}
       ${allGenres.length ? `<div class="sf-group"><span class="sf-label">Genres</span>${genreChips}</div>` : ""}
       ${filterActive ? `<button class="sf-clear" id="sfClear" type="button">Clear filters</button>` : ""}
     </div>`;
   const wireHead = () => {
-    $("#wrappedBtn").addEventListener("click", openWrapped);
+    $("#wrappedBtn").addEventListener("click", () => openWrapped(statsScope(), filterActive ? statsScopeLabel() : ""));
     const root2 = $("#statsContent");
     root2.querySelectorAll(".sf-chip[data-type]").forEach((b) =>
       b.addEventListener("click", () => { statsFilter.type = b.dataset.type; renderStatsView(); }));
@@ -3513,8 +3548,10 @@ function renderStatsView() {
       b.addEventListener("click", () => { statsFilter.tags = toggle(statsFilter.tags, b.dataset.tag); renderStatsView(); }));
     root2.querySelectorAll(".sf-chip[data-genre]").forEach((b) =>
       b.addEventListener("click", () => { statsFilter.genres = toggle(statsFilter.genres, b.dataset.genre); renderStatsView(); }));
+    root2.querySelectorAll(".sf-chip[data-coll]").forEach((b) =>
+      b.addEventListener("click", () => { statsFilter.collection = statsFilter.collection === b.dataset.coll ? null : b.dataset.coll; renderStatsView(); }));
     const clr = $("#sfClear");
-    if (clr) clr.addEventListener("click", () => { statsFilter = { tags: [], genres: [], type: "all" }; renderStatsView(); });
+    if (clr) clr.addEventListener("click", () => { statsFilter = { tags: [], genres: [], type: "all", collection: null }; renderStatsView(); });
   };
 
   if (!items.length) {
@@ -3525,12 +3562,14 @@ function renderStatsView() {
   }
 
   const scopeBits = [];
+  const activeColl = statsCollection();
+  if (activeColl) scopeBits.push(`<b>${escapeHtml(activeColl.label)}</b>`);
   if (statsFilter.tags.length) scopeBits.push(`tagged <b>${statsFilter.tags.map(escapeHtml).join("</b> / <b>")}</b>`);
   if (statsFilter.genres.length) scopeBits.push(`<b>${statsFilter.genres.map(escapeHtml).join("</b> / <b>")}</b>`);
   if (statsFilter.type !== "all") scopeBits.push(statsFilter.type === "tv" ? "TV shows only" : "movies only");
   const filterNote = filterActive
     ? `<div class="stats-filter-note">Showing ${items.length} title${items.length === 1 ? "" : "s"}${
-        scopeBits.length ? " · " + scopeBits.join(" · ") : ""}. Wrapped still covers your whole library.</div>`
+        scopeBits.length ? " · " + scopeBits.join(" · ") : ""}. Your Wrapped follows this filter too.</div>`
     : "";
 
   const { min, eps, moviesWatched } = libraryStats(items);
@@ -3629,22 +3668,26 @@ function renderStatsView() {
 }
 
 /* ================= Wrapped ================= */
-function openWrapped() {
-  const { min, eps, moviesWatched } = libraryStats(state.items);
+function openWrapped(scopeItems, scopeLabel = "") {
+  const items = scopeItems && scopeItems.length ? scopeItems : state.items;
+  const kicker = scopeLabel ? `Your ${scopeLabel} Wrapped` : "Your Bearwatch Wrapped";
+  const { min, eps, moviesWatched } = libraryStats(items);
   const hours = Math.round(min / 60);
   const days = (min / 1440).toFixed(1);
   const genreMin = {};
-  for (const it of state.items) {
+  for (const it of items) {
     const m = itemWatchedMinutes(it);
     if (!m) continue;
     const gs = it.genres && it.genres.length ? it.genres : [];
     for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m / gs.length;
   }
   const topGenre = Object.entries(genreMin).sort((a, b) => b[1] - a[1])[0];
-  const topRated = [...state.items].filter((i) => i.rating).sort((a, b) => b.rating - a.rating)[0];
-  const topShow = state.items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
+  const topRated = [...items].filter((i) => i.rating).sort((a, b) => b.rating - a.rating)[0];
+  const topShow = items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
     .sort((a, b) => epsSeenOf(b) - epsSeenOf(a))[0];
-  const events = loadJSON(LS_EVENTS, []);
+  // Keep the busiest-month calc to the same set of titles as everything else.
+  const scopeIds = new Set(items.map((i) => i.id));
+  const events = loadJSON(LS_EVENTS, []).filter((e) => scopeIds.has(e.id));
   let busiest = null;
   if (events.length) {
     const byMonth = {};
@@ -3656,7 +3699,7 @@ function openWrapped() {
     busiest = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
   }
   const flights = (min / 60 / 14).toFixed(1);   // Sydney → LA is ~14 h
-  const ratedCount = state.items.filter((i) => i.rating).length;
+  const ratedCount = items.filter((i) => i.rating).length;
 
   // Structured lines (pre / value / post) so both the card and the image can render them.
   const lines = [];
@@ -3664,14 +3707,14 @@ function openWrapped() {
   if (topRated) lines.push({ pre: "Your #1: ", val: topRated.title, post: `, you gave it ★ ${topRated.rating}` });
   if (topShow) lines.push({ pre: "Most binged: ", val: topShow.title, post: ` (${epsSeenOf(topShow)} episodes)` });
   if (busiest) lines.push({ pre: "Biggest month: ", val: busiest[0], post: ` (${fmtH(busiest[1])})` });
-  const w = { hours, days, moviesWatched, eps, ratedCount, lines, flights };
+  const w = { hours, days, moviesWatched, eps, ratedCount, lines, flights, kicker };
 
   const body = $("#modalBody");
   $("#modalOverlay").classList.remove("hidden");
   body.innerHTML = `
     <button class="modal-close" type="button" title="Close">✕</button>
     <div class="wrapped-card">
-      <div class="w-kicker">Your Bearwatch Wrapped</div>
+      <div class="w-kicker">${escapeHtml(kicker)}</div>
       <div class="w-big">${hours} hours</div>
       <div class="w-sub">of movies and shows, which is ${days} days of screen time</div>
       <div class="w-row">
@@ -3713,7 +3756,9 @@ function renderWrappedCanvas(w) {
 
   let y = 150;
   ctx.fillStyle = "#9fb3b3"; ctx.font = F(26, "700");
-  ctx.fillText("Y O U R   B E A R W A T C H   W R A P P E D", cx, y);
+  // Letter-spaced kicker (a plain space between every character gives ~3 spaces
+  // between words, matching the original look), for whichever scope this is.
+  ctx.fillText((w.kicker || "Your Bearwatch Wrapped").toUpperCase().split("").join(" "), cx, y);
   y += 120;
   ctx.fillStyle = "#2bb0b3"; ctx.font = F(120, "800");
   ctx.fillText(`${w.hours} hours`, cx, y);
