@@ -3589,7 +3589,9 @@ function renderStatsView() {
     const m = itemWatchedMinutes(it);
     if (!m) continue;
     const gs = it.genres && it.genres.length ? it.genres : ["Uncategorised"];
-    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m / gs.length;
+    // Count a title's full watched time toward each of its genres (like the
+    // decade breakdown), so a multi-genre title isn't diluted across them.
+    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m;
   }
   const topGenres = Object.entries(genreMin).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
@@ -3679,34 +3681,22 @@ function openWrapped(scopeItems, scopeLabel = "") {
     const m = itemWatchedMinutes(it);
     if (!m) continue;
     const gs = it.genres && it.genres.length ? it.genres : [];
-    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m / gs.length;
+    for (const g of gs) genreMin[g] = (genreMin[g] || 0) + m;   // full time per genre (see stats view)
   }
   const topGenre = Object.entries(genreMin).sort((a, b) => b[1] - a[1])[0];
   const topRated = [...items].filter((i) => i.rating).sort((a, b) => b.rating - a.rating)[0];
   const topShow = items.filter((i) => i.mediaType === "tv" && epsSeenOf(i) > 0)
     .sort((a, b) => epsSeenOf(b) - epsSeenOf(a))[0];
-  // Keep the busiest-month calc to the same set of titles as everything else.
-  const scopeIds = new Set(items.map((i) => i.id));
-  const events = loadJSON(LS_EVENTS, []).filter((e) => scopeIds.has(e.id));
-  let busiest = null;
-  if (events.length) {
-    const byMonth = {};
-    for (const e of events) {
-      const d = new Date(e.t);
-      const k = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-      byMonth[k] = (byMonth[k] || 0) + e.min;
-    }
-    busiest = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
-  }
   const flights = (min / 60 / 14).toFixed(1);   // Sydney → LA is ~14 h
   const ratedCount = items.filter((i) => i.rating).length;
 
   // Structured lines (pre / value / post) so both the card and the image can render them.
+  // (No "biggest month": watch timestamps are skewed by titles you add and mark
+  // watched in bulk, so it isn't a fair reflection of when you actually watched.)
   const lines = [];
   if (topGenre) lines.push({ pre: "Your genre of choice: ", val: topGenre[0], post: ` (${fmtH(topGenre[1])})` });
   if (topRated) lines.push({ pre: "Your #1: ", val: topRated.title, post: `, you gave it ★ ${topRated.rating}` });
   if (topShow) lines.push({ pre: "Most binged: ", val: topShow.title, post: ` (${epsSeenOf(topShow)} episodes)` });
-  if (busiest) lines.push({ pre: "Biggest month: ", val: busiest[0], post: ` (${fmtH(busiest[1])})` });
   const w = { hours, days, moviesWatched, eps, ratedCount, lines, flights, kicker };
 
   const body = $("#modalBody");
