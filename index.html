@@ -131,6 +131,7 @@
     width: 40px; height: 60px; border-radius: 4px; object-fit: cover; flex-shrink: 0;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center; font-size: 18px;
   }
+  .search-result.person img, .search-result.person .thumb-ph { border-radius: 50%; }
   .search-result .sr-title { font-weight: 600; font-size: 14px; }
   .search-result .sr-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; align-items: center; }
   .search-result .sr-added { margin-left: auto; font-size: 12px; color: var(--green); white-space: nowrap; }
@@ -141,6 +142,7 @@
   }
   .type-badge.movie { background: rgba(61,140,201,.22); color: #6fb3e0; }
   .type-badge.tv { background: #1b4d4e; color: #a8e6cf; }
+  .type-badge.person { background: rgba(154,92,224,.22); color: #c9a6f0; }
 
   /* Grow to fill the space after the search box and centre the tabs within it.
      On one row that seats them centre-right; when the bar wraps them onto their
@@ -371,6 +373,16 @@
   .explore-more { text-align: center; margin: 22px 0 8px; }
   .explore-msg { padding: 40px 14px; text-align: center; color: var(--text-dim); font-size: 13.5px; }
   .explore-skel { opacity: .5; pointer-events: none; }
+
+  /* ---------- Person (actor) filmography ---------- */
+  .modal-hero img.person-photo, .modal-hero .poster-ph.person-photo {
+    width: 110px; height: 110px; border-radius: 50%; object-fit: cover; aspect-ratio: auto; font-size: 44px;
+  }
+  .person-credits { padding: 4px 22px 22px; }
+  .rec-card .rec-role {
+    font-size: 11px; color: var(--text-faint); padding: 0 9px 8px; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+  }
   .stats-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px; }
   .stats-bar:empty { display: none; }
   .stat-chip {
@@ -770,7 +782,7 @@
     <button class="search-toggle" id="searchToggle" type="button" aria-label="Search" title="Search">🔍</button>
     <div class="search-wrap">
       <span class="search-icon">🔍</span>
-      <input id="searchInput" type="text" placeholder="Search movies &amp; TV shows…" autocomplete="off" spellcheck="false">
+      <input id="searchInput" type="text" placeholder="Search movies, TV &amp; people…" autocomplete="off" spellcheck="false">
       <div id="searchDropdown" class="search-dropdown hidden"></div>
     </div>
     <nav class="tabs">
@@ -1114,9 +1126,9 @@ searchInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     const r = activeIndex >= 0 ? searchResults[activeIndex] : null;
     if (!r) return;
-    // Enter is the keyboard shortcut: jump to it if you already have it,
-    // otherwise quick-add to your watchlist (the add buttons cover other statuses).
-    if (state.items.some((it) => it.id === r.media_type + "-" + r.id)) openSearchResult(r);
+    // Enter: open a person's filmography or a title you already have; otherwise
+    // quick-add the title to your watchlist (the add buttons cover other statuses).
+    if (r.media_type === "person" || state.items.some((it) => it.id === r.media_type + "-" + r.id)) openSearchResult(r);
     else selectResult(r);
   }
   else if (e.key === "Escape") closeDropdown();
@@ -1136,9 +1148,11 @@ async function runSearch(query) {
   showSearchMessage("Searching…");
   try {
     const data = await tmdbFetch("/search/multi", { query, include_adult: "false" }, searchAbort.signal);
-    searchResults = (data.results || [])
-      .filter((r) => r.media_type === "movie" || r.media_type === "tv")
-      .slice(0, 8);
+    const all = data.results || [];
+    // Surface matching people first (so searching an actor finds them), then titles.
+    const people = all.filter((r) => r.media_type === "person" && r.profile_path).slice(0, 3);
+    const titles = all.filter((r) => r.media_type === "movie" || r.media_type === "tv").slice(0, 6);
+    searchResults = [...people, ...titles];
     renderDropdown();
   } catch (err) {
     if (err.name === "AbortError") return;
@@ -1156,8 +1170,25 @@ function showSearchMessage(html) {
 
 function renderDropdown() {
   activeIndex = -1;
-  if (!searchResults.length) { showSearchMessage("No movies or TV shows found."); return; }
+  if (!searchResults.length) { showSearchMessage("No movies, TV shows or people found."); return; }
   dropdown.innerHTML = searchResults.map((r, i) => {
+    if (r.media_type === "person") {
+      const thumb = IMG(r.profile_path, "w92");
+      const dept = r.known_for_department === "Acting" ? "Actor" : (r.known_for_department || "Person");
+      const knownFor = (r.known_for || []).map((k) => k.title || k.name).filter(Boolean).slice(0, 3).join(", ");
+      return `
+        <div class="search-result person" data-i="${i}">
+          ${thumb ? `<img src="${thumb}" alt="">` : `<div class="thumb-ph">👤</div>`}
+          <div class="sr-main">
+            <div class="sr-title">${escapeHtml(r.name || "")}</div>
+            <div class="sr-meta">
+              <span class="type-badge person">Person</span>
+              <span>${escapeHtml(dept)}</span>
+            </div>
+            <div class="sr-open">${knownFor ? "Known for " + escapeHtml(knownFor) + " · " : ""}See their movies &amp; shows →</div>
+          </div>
+        </div>`;
+    }
     const title = r.media_type === "movie" ? r.title : r.name;
     const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
     const thumb = IMG(r.poster_path, "w92");
@@ -1203,6 +1234,14 @@ function renderDropdown() {
 // can update where you're up to. Otherwise show the summary popup (still there
 // for everything you don't have yet).
 function openSearchResult(r) {
+  // Snapshot the query + results first, so whatever we open can offer a way back.
+  const snap = { query: searchInput.value.trim(), results: searchResults.slice() };
+  if (r.media_type === "person") {
+    closeDropdown();
+    searchInput.value = "";
+    openPersonModal(r, { backToSearch: snap });
+    return;
+  }
   const existing = state.items.find((it) => it.id === r.media_type + "-" + r.id);
   if (existing) {
     closeDropdown();
@@ -1210,13 +1249,11 @@ function openSearchResult(r) {
     goToLibraryItem(existing.id);
     return;
   }
-  // Not in your library yet: show the summary popup, but hang on to the query
-  // and the current results so the popup can offer a way back, in case this
-  // wasn't the title you meant.
-  const snap = { query: searchInput.value.trim(), results: searchResults.slice() };
+  // Not in your library yet: show the summary popup, but keep the search handy in
+  // case this wasn't the title you meant.
   closeDropdown();
   searchInput.value = "";
-  openDetailsModal(recToItem(r), { backToSearch: snap });
+  openDetailsModal(recToItem(r), { back: { label: "Back to results", run: () => restoreSearch(snap) } });
 }
 
 // Re-open the search dropdown from a snapshot taken before a details popup.
@@ -2702,7 +2739,7 @@ async function openDetailsModal(item, opts = {}) {
           </div>
           ${genres.length ? `<div class="genre-chips">${genres.map((g) => `<span class="genre-chip">${escapeHtml(g)}</span>`).join("")}</div>` : ""}
           <div class="modal-actions">
-            ${opts.backToSearch ? `<button class="btn secondary" id="modalBackSearch" type="button">← Back to results</button>` : ""}
+            ${opts.back ? `<button class="btn secondary" id="modalBack" type="button">← ${escapeHtml(opts.back.label)}</button>` : ""}
             ${inLibrary ? `<button class="btn" id="modalGoLibrary" type="button">${item.mediaType === "tv" ? "📺 Update progress" : "✎ Open in your library"}</button>` : ""}
             ${stremioUrl ? `<a class="btn stremio" href="${stremioUrl}" title="${stremioAtNext ? "Open your next episode in the Stremio app" : "Open this title in the Stremio app"}">▶ ${stremioAtNext ? "Next episode in Stremio" : "Open in Stremio"}</a>` : ""}
             ${trailer ? `<a class="btn secondary" href="https://www.youtube.com/watch?v=${encodeURIComponent(trailer.key)}" target="_blank" rel="noopener">▶ Trailer</a>` : ""}
@@ -2723,11 +2760,11 @@ async function openDetailsModal(item, opts = {}) {
         </div>` : ""}
       ${providersHtml}`;
     body.querySelector(".modal-close").addEventListener("click", closeModal);
-    const back = body.querySelector("#modalBackSearch");
+    const back = body.querySelector("#modalBack");
     // stopPropagation: keep this click from reaching the document listener that
     // closes the dropdown for clicks outside the search box (it would immediately
-    // re-close the dropdown we're about to reopen).
-    if (back) back.addEventListener("click", (e) => { e.stopPropagation(); restoreSearch(opts.backToSearch); });
+    // re-close a dropdown we're about to reopen).
+    if (back) back.addEventListener("click", (e) => { e.stopPropagation(); opts.back.run(); });
     const goLib = body.querySelector("#modalGoLibrary");
     if (goLib) goLib.addEventListener("click", () => goToLibraryItem(item.id));
     if (inLibrary) wireModalTags(body, libItem);
@@ -2838,6 +2875,118 @@ function recToItem(r) {
     posterPath: r.poster_path || null,
     overview: r.overview || "",
   };
+}
+
+/* ================= Person (actor) filmography ================= */
+const personCache = {};   // person id -> merged credits (per session)
+
+// Show a person: their photo and a grid of the movies and shows they're in,
+// each addable straight to your library. Opened from a person search result.
+async function openPersonModal(person, opts = {}) {
+  const overlay = $("#modalOverlay");
+  const body = $("#modalBody");
+  overlay.classList.remove("hidden");
+  const dept = person.known_for_department === "Acting" ? "Actor" : (person.known_for_department || "Person");
+  const profile = IMG(person.profile_path, "w185");
+  const tmdbUrl = `https://www.themoviedb.org/person/${person.id}`;
+
+  const render = (credits, loading) => {
+    body.innerHTML = `
+      <button class="modal-close" type="button" title="Close">✕</button>
+      <div class="modal-hero">
+        ${profile ? `<img class="person-photo" src="${profile}" alt="">` : `<div class="poster-ph person-photo">👤</div>`}
+        <div>
+          <h2>${escapeHtml(person.name || "")}</h2>
+          <div class="modal-meta">
+            <span class="type-badge person">${escapeHtml(dept)}</span>
+            ${credits ? `<span>${credits.length} title${credits.length === 1 ? "" : "s"}</span>` : ""}
+          </div>
+          <div class="modal-actions">
+            ${opts.backToSearch ? `<button class="btn secondary" id="personBack" type="button">← Back to results</button>` : ""}
+            <a class="btn secondary" href="${tmdbUrl}" target="_blank" rel="noopener">TMDb page</a>
+          </div>
+        </div>
+      </div>
+      <div class="person-credits">
+        ${loading ? `<div class="explore-msg">Loading their movies &amp; shows…</div>`
+          : (credits && credits.length
+              ? `<div class="explore-grid">${credits.map(personCreditCardHtml).join("")}</div>`
+              : `<div class="explore-msg">No movies or shows found for this person.</div>`)}
+      </div>`;
+    body.querySelector(".modal-close").addEventListener("click", closeModal);
+    const back = body.querySelector("#personBack");
+    if (back) back.addEventListener("click", (e) => { e.stopPropagation(); restoreSearch(opts.backToSearch); });
+    if (credits) wirePersonCredits(body, person, credits, opts);
+  };
+
+  render(personCache[person.id] || null, !personCache[person.id]);
+  if (!personCache[person.id]) {
+    try {
+      const data = await tmdbFetch(`/person/${person.id}/combined_credits`);
+      personCache[person.id] = mergePersonCredits(data);
+      if (!overlay.classList.contains("hidden")) render(personCache[person.id], false);
+    } catch (err) {
+      const slot = body.querySelector(".person-credits");
+      if (slot && !overlay.classList.contains("hidden"))
+        slot.innerHTML = `<div class="explore-msg">Couldn't load their credits: ${escapeHtml(err.message || "error")}</div>`;
+    }
+  }
+}
+
+// Fold TMDb combined_credits (cast + crew) into one de-duplicated list of
+// movies/shows, most prominent first, each tagged with the person's role.
+function mergePersonCredits(data) {
+  const byId = new Map();
+  const add = (c, role) => {
+    if (c.media_type !== "movie" && c.media_type !== "tv") return;
+    if (!c.poster_path && !(c.title || c.name)) return;
+    const key = c.media_type + "-" + c.id;
+    const existing = byId.get(key);
+    if (existing) { if (role && !existing._roles.includes(role)) existing._roles.push(role); return; }
+    byId.set(key, { ...c, _roles: role ? [role] : [] });
+  };
+  for (const c of (data.cast || [])) add(c, c.character ? "as " + c.character : "");
+  for (const c of (data.crew || [])) add(c, c.job || "");
+  return [...byId.values()]
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 60);
+}
+
+function personCreditCardHtml(r) {
+  const title = r.media_type === "movie" ? r.title : r.name;
+  const date = r.media_type === "movie" ? r.release_date : r.first_air_date;
+  const tracked = state.items.find((it) => it.id === r.media_type + "-" + r.id);
+  const role = (r._roles || []).filter(Boolean)[0] || "";
+  return `
+    <div class="rec-card" data-id="${r.media_type}-${r.id}">
+      <div class="rec-poster" title="Show details">
+        ${r.poster_path ? `<img src="${IMG(r.poster_path, "w185")}" alt="" loading="lazy">` : `<div class="poster-ph">🎬</div>`}
+      </div>
+      <div class="rec-title" title="${escapeHtml(title || "")}">${escapeHtml(title || "")}</div>
+      <div class="rec-meta"><span class="type-badge ${r.media_type}">${r.media_type === "tv" ? "TV" : "Movie"}</span> ${yearOf(date)}</div>
+      ${role ? `<div class="rec-role" title="${escapeHtml(role)}">${escapeHtml(role)}</div>` : ""}
+      ${tracked
+        ? `<div class="add-picker col"><div style="text-align:center;padding:6px 8px 10px;color:var(--green);font-size:12px">✓ In ${statusLabel(tracked.status)}</div></div>`
+        : `<div class="add-picker col">
+            <button class="add-btn" type="button" data-status="watching">▶ Watching</button>
+            <button class="add-btn" type="button" data-status="watchlist">＋ Watchlist</button>
+            <button class="add-btn" type="button" data-status="watched">✓ Watched</button>
+          </div>`}
+    </div>`;
+}
+
+function wirePersonCredits(body, person, credits, opts) {
+  body.querySelectorAll(".explore-grid .rec-card").forEach((card) => {
+    const r = credits.find((x) => x.media_type + "-" + x.id === card.dataset.id);
+    if (!r) return;
+    card.querySelector(".rec-poster").addEventListener("click", () =>
+      openDetailsModal(recToItem(r), { back: { label: "Back to " + (person.name || "person"), run: () => openPersonModal(person, opts) } }));
+    card.querySelectorAll(".add-btn").forEach((btn) => btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectResult(r, btn.dataset.status);   // pushes synchronously
+      openPersonModal(person, opts);          // re-render from cache to flip the card's state
+    }));
+  });
 }
 
 const RECS_WINDOW = 12;
@@ -3869,6 +4018,9 @@ document.querySelectorAll(".tab").forEach((t) =>
 // Newest first. The top entry's `id` is what we compare against to decide
 // whether to show the "new update" dot on the Settings tab.
 const CHANGELOG = [
+  { id: "2026-10-14", date: "14 October 2026", items: [
+    "Search now finds people too: search an actor or director, open them, and browse every movie and show they're in, adding any of them straight to your library.",
+  ] },
   { id: "2026-09-09", date: "9 September 2026", items: [
     "New Explore tab: browse movies and TV by genre, or dip into collections like Trending, Anime, K-Drama, Bollywood, Korean, Spanish and French, then add a title straight to your library. 'You might like' now lives here too.",
     "Search: when you open a title you don't own yet, a 'Back to results' button takes you back to your search, so picking the wrong one is easy to undo.",
